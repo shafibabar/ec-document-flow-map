@@ -22,7 +22,8 @@ node --test "tools/test/*.test.js"     # the validator's own tests
 Note the quoted glob. `node --test tools/test/` does **not** work on Node 22 — it
 tries to `require()` the directory as a module and fails with `MODULE_NOT_FOUND`.
 Bare `node --test` from the repo root also works but additionally discovers the
-fixture files under `tools/test/fixtures/`, reporting 19 "tests" instead of 11.
+fixture files under `tools/test/fixtures/` and counts each as a passing "test",
+reporting 37 rather than the 20 real ones. Use the glob, and expect 20.
 
 ---
 
@@ -42,8 +43,13 @@ would make sense", stop and write `"unknown"`.
 | The sources positively state there is none | `"none"`, or `[]` for a collection, plus an `ambiguities` note |
 | Two sources disagree | a `conflict` — **both** readings, **both** sources |
 
-**`null` is never valid anywhere.** The validator rejects it. A `null` cannot be
-distinguished from an oversight, which defeats the whole point.
+**`null` is never valid anywhere.** The validator rejects it, at any depth —
+inside a nested object and inside an array element, not only in an entry's own
+fields. A `null` cannot be distinguished from an oversight, which defeats the
+whole point.
+
+**An empty string is rejected for the same reason.** `attempts: ''` is not a
+statement about the document; `attempts: 'unknown'` is.
 
 The `"none"` versus `"unknown"` distinction is load-bearing. "Echo Engine belongs
 to no sub-domain" and "we could not tell which sub-domain Echo Engine belongs to"
@@ -73,11 +79,49 @@ source: { file: 'Echo Engine/EVENT_FLOW_MAP.md', heading: 'Events Consumed', row
 |---|---|---|
 | `file` | yes | Relative to `knowledge/Conduct Services/` |
 | `heading` | yes | The `##` or `###` section it was read from |
-| `row` | no | 1-based row within that section's table, when applicable |
+| `row` | no | 1-based row within that section's table, when applicable. Must be an integer ≥ 1 |
 
-One exception, for issue #5 only: a position **inferred** rather than read may use
-`{ inferred: true, reason: '...' }`. The reason is mandatory — an inference
-without a stated basis is a guess wearing a badge.
+**Placeholders are rejected, not just empty strings.** `{ file: 'TODO' }`,
+`{ heading: '...' }` and `{ heading: 'unknown' }` all fail. A source that names
+nothing is worse than no source at all, because it looks like it was checked.
+
+### Citing the architecture image
+
+`group` and `generation` are read from the image, not from a markdown file, so
+they are cited as:
+
+```js
+source: { file: 'Enterprise Conduct V3 - TSA.jpg', heading: 'Actioning Sub-domain' }
+```
+
+The image sits in `knowledge/Conduct Services/`, so the same relative-path rule
+applies. `heading` names the labelled frame the component was found inside —
+`Alerting Sub-domain`, `Actioning Sub-domain`, `Search Sub-domain`, `Review
+Sub-domain`, `Reporting subdomain` — or `Legend` for anything read off the
+colour key. A component drawn outside every frame has `group: 'none'`, cited to
+the image all the same.
+
+### More than one section: `source` may be an array
+
+An entry whose fields came from two sections cites both, in the order the fields
+appear:
+
+```js
+source: [
+  { file: 'Echo Engine/ec-echo-engine_stop_info.md', heading: 'Purpose' },
+  { file: 'Echo Engine/EVENT_FLOW_MAP.md', heading: 'High-Level Architecture' }
+]
+```
+
+This is not a convenience. This schema orders retry data gathered from tables
+**and** prose **and** mermaid; a single `{file, heading}` on such an entry has to
+name one of them and silently mis-cite the rest. Prefer one source where one
+section really is the origin — an array of every section you happened to read is
+not provenance either.
+
+One further exception, for issue #5 only: a position **inferred** rather than
+read may use `{ inferred: true, reason: '...' }`. The reason is mandatory — an
+inference without a stated basis is a guess wearing a badge.
 
 ---
 
@@ -86,15 +130,21 @@ without a stated basis is a guess wearing a badge.
 ```js
 attempts: {
   conflict: [
-    { value: '3', source: { file: '...', heading: 'Kafka consumer configuration' } },
-    { value: '1', source: { file: '...', heading: 'Deployment overlays' } },
-    { value: '4', source: { file: '...', heading: 'Base shared configuration' } }
+    { value: '3', source: { file: 'Gateway/EVENT_FLOW_MAP.md', heading: 'Kafka consumer configuration' } },
+    { value: '1', source: { file: 'Gateway/EVENT_FLOW_MAP.md', heading: 'Deployment overlays' } },
+    { value: '4', source: { file: 'Gateway/ec-gateway_stop_info.md', heading: 'Configuration' } }
   ]
 }
 ```
 
-Any field may hold a conflict instead of a value. At least **two** readings, each
-with its own `source`. One reading is not a conflict — record the value directly.
+Any field may hold a conflict instead of a value, including `transport` and the
+other enumerated fields — but the enum still applies to each reading, so a
+conflict is not a way to smuggle an invalid value past the validator. Nested
+conflicts, inside an array element or a nested object, are checked too.
+
+At least **two** readings, each with its own `source` (which may itself be an
+array, when one reading rests on several sections). One reading is not a
+conflict — record the value directly.
 
 ---
 
@@ -129,8 +179,8 @@ page still loads by opening `index.html`.
 | `name` | The service's real name, e.g. `ec-echo-engine` |
 | `folder` | The `knowledge/Conduct Services/` folder it came from |
 | `displayName` | What appears on the map |
-| `group` | Sub-domain from the image: `Alerting` · `Actioning` · `Search` · `Review` · `Reporting` · `none` |
-| `generation` | `3.0` or `integrated`. No 2.0 components are in scope |
+| `group` | Sub-domain from the image: `Alerting` · `Actioning` · `Search` · `Review` · `Reporting` · `none` · `unknown`. Required — write `unknown` rather than omitting it |
+| `generation` | `3.0` · `integrated` · `none` · `unknown`. No 2.0 components are in scope. **Quote it**: unquoted `3.0` is the JavaScript number `3` |
 | `summary` | One or two sentences: what this stop does to the document |
 | `source` | Required |
 
@@ -146,23 +196,38 @@ and it documents none"; absence cannot be distinguished from having forgotten it
 
 | Field | Notes |
 |---|---|
-| `id` | `echo-engine`, `topic:echo-engine.echoAction`, `dlt:echoAction` |
-| `name` | The literal name as written in the source, placeholders intact |
-| `kind` | `service` · `store` · `topic` · `dlt` · `external` |
-| `group`, `generation` | As above; `unknown` for topics |
+| `id` | Required. `echo-engine`, `topic:echo-engine.echoAction`, `dlt:echoAction` |
+| `name` | Required. The literal name as written in the source, placeholders intact |
+| `kind` | Required. `service` · `store` · `topic` · `dlt` · `external` |
+| `group` | Required. Values as for `service`. **`none` on every topic and DLT node** — the image draws no topic inside a sub-domain frame, so "belongs to no sub-domain" is a positive reading, not a silence |
+| `generation` | Required. **`unknown` on every topic and DLT node** — the image assigns a generation to components, not to topics, and inferring one from the producing service would be a guess |
+| `summary` | The service node carries one — the same sentence as `service.summary`, or a shorter form of it. Topic and DLT nodes normally have none: writing one means inventing it |
 
-Record topics and DLTs as nodes. `data/layout.js` (issue #5) is authoritative for
-grid position — do not put coordinates here.
+Record topics and DLTs as nodes. **These are not nodes:**
+
+- **Mongo collections, outbox collections and per-tenant windowed collections.**
+  They belong in `stores[]`, and surface on the State layer and in stop detail.
+  Parent #3 settled this: dozens of collections as map stops crowds the grid past
+  readability.
+- **Retry topics.** They live in `retries[].retryTopics`. Only the DLT gets a
+  node, because the DLT is where a document's journey visibly ends.
+
+`retries[].dltTarget` holds the DLT topic pattern, character-for-character equal
+to the `name` of the corresponding `dlt` node — that string equality is how the
+two join during the merge, so do not abbreviate one of them.
+
+`data/layout.js` (issue #5) is authoritative for grid position — do not put
+coordinates here.
 
 ### `edges[]`
 
 | Field | Notes |
 |---|---|
-| `from`, `to` | Node ids |
-| `transport` | **`kafka` · `rest` · `s3` · `mongo` · `elastic` · `cdc`** |
-| `name` | Topic name or endpoint path, placeholders intact |
+| `from`, `to` | Required. Node ids. An edge missing one silently vanishes from the graph instead of failing, so both are enforced |
+| `transport` | Required. **`kafka` · `rest` · `s3` · `mongo` · `elastic` · `cdc`** |
+| `direction` | Required. `in` · `out` · `read` · `write` · `both`. Always determinable — no document leaves it open |
+| `name` | Topic name or endpoint path, placeholders intact. `unknown` if the document truly never names it |
 | `eventType` | Payload DTO or message type |
-| `direction` | `in` · `out` · `read` · `write` · `both` |
 | `consumer` / `publisher` | Class and method |
 | `consumerGroup`, `purpose`, `trigger`, `note` | Where documented |
 
@@ -175,6 +240,14 @@ publishes from, the transport is `cdc`. The wire is Kafka; the semantic is chang
 data capture. The Outbox/CDC layer — the one that corrects the belief that
 services publish their own events — depends entirely on this being got right
 during extraction. Twelve of sixteen services use the pattern.
+
+**When a document is not consistent with itself about this, record a conflict.**
+The worked example does exactly that: Echo Engine's Events Consumed table gives
+the alert topic's payload as a plain `AlertEvent`, in pointed contrast to the two
+rows beneath it that say "Debezium `CdcEvent` containing …", while the same
+file's two mermaid diagrams and the `stop_info` call it a CDC topic carrying CDC
+events. Deciding between those readings needs the *producing* service's extract,
+which you do not have and must not go and read. Record both.
 
 ### `retries[]`
 
@@ -190,15 +263,22 @@ of 33 documents; "DLQ" appears in none.
 
 ### `stores[]`
 
-`store` (`mongo` · `s3` · `elastic`) · `entity` · `collection` · `repository` ·
-`operations` · `calledBy` · `windowed` · `source`
+`store` (required: `mongo` · `s3` · `elastic`) · `entity` · `collection` ·
+`repository` · `operations` · `calledBy` · `windowed` · `source`
 
-From Persistent Store Interactions. Feeds the State layer.
+From Persistent Store Interactions. Feeds the State layer. These entries are the
+*only* record of a Mongo collection — collections are not nodes, so anything left
+out here is not in the model at all.
 
 ### `transformation` — one object
 
 ```js
-transformation: { before: '...', action: '...', after: '...', source: {...} }
+transformation: {
+  before: 'AlertEvent (CDC) on ec.alerting-service.{tenant}.alertedCommunication',
+  action: 'hash policy hits → correlate against state store → classify',
+  after: 'EchoActionEvent on ec.echo-engine.{tenant}.echoAction (with classification)',
+  source: { file: 'Echo Engine/ec-echo-engine_stop_info.md', heading: 'Transformation' }
+}
 ```
 
 From `stop_info` → Transformation. **This is the highest-value field in the whole
@@ -266,6 +346,30 @@ answers during planning. Read the tables; do not pattern-match.
 
 ---
 
+## What the validator enforces
+
+Everything in this list is mechanical. Everything *not* in it — whether the
+extracted facts are true — is what reading the document is for, and no tool
+substitutes for it.
+
+| Rule | Failure looks like |
+|---|---|
+| Every entry has a `source`, or an array of them | `edges[1]: missing source` |
+| `source.file` and `source.heading` are non-empty and not placeholders | `source.file is a placeholder ("TODO")` |
+| `source.row`, when present, is an integer ≥ 1 | `source.row must be a 1-based integer` |
+| All eleven collections declared, `transformation` present and an object | `tenancy: missing` |
+| `transport` ∈ the six, inside a conflict as well as outside | `edges[0].transport: "jdbc" is not valid` |
+| `kind`, `group`, `generation`, `store` ∈ their sets | `nodes[0].kind: "queue" is not valid` |
+| Edges have `from`, `to`, `transport`, `direction`; nodes have `id`, `name`, `kind` | `edges[0].to: missing` |
+| No `null` and no empty string, at any depth | `retries[0].retryTopics[1]: is null` |
+| A conflict has ≥ 2 readings, each with a value and a source | `conflict has 1 reading(s)` |
+| The extract is plain, serialisable data | `nodes[0].itself: is a circular reference` |
+
+Every problem in a run is reported, with file, entity type and index. It never
+stops at the first, and a broken entry never costs you the report on the rest.
+
+---
+
 ## Checklist before marking an extraction issue done
 
 - [ ] `node --check data/extracted/<id>.js` passes
@@ -274,6 +378,9 @@ answers during planning. Read the tables; do not pattern-match.
 - [ ] Every entry has a `source` naming file and heading
 - [ ] Every ambiguity the document flags is copied across
 - [ ] Retry data gathered from tables **and** prose **and** mermaid
-- [ ] No `null` anywhere; silences are `"unknown"`; known absences are `"none"`
+- [ ] No `null` and no empty string anywhere; silences are `"unknown"`; known absences are `"none"`
 - [ ] No conflict resolved — both readings recorded with both sources
+- [ ] Every `source` names the section its fields actually came from; an entry
+      drawing on two sections cites both
+- [ ] Nothing abbreviated: a name the document shortens with `...` is written out
 - [ ] Any acceptance fact from issue #3 belonging to this service is reproduced

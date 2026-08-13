@@ -11,18 +11,28 @@
  * Read docs/MODEL_SCHEMA.md alongside this file. The schema states the rules;
  * this shows them applied to a document with real awkwardness in it.
  *
- * Three things worth noticing before you copy the pattern:
+ * Five things worth noticing before you copy the pattern:
  *
  *  1. The two documents disagree on tenant placeholder syntax — the flow map
  *     writes `<tenant>`, the stop_info writes `{tenant}`. Cosmetic, but recorded
  *     rather than silently normalised, because "I assumed it was cosmetic" is
  *     exactly how a real discrepancy gets lost.
- *  2. Config topics arrive as Debezium CdcEvents, so their transport is `cdc`,
- *     not `kafka`. The wire is Kafka; the semantic is change data capture. The
- *     Outbox/CDC layer depends on that distinction being made here.
- *  3. `restOutbound` is empty because the document says "None found" explicitly
+ *  2. The config topics arrive as Debezium CdcEvents, so their transport is
+ *     `cdc`, not `kafka`. The wire is Kafka; the semantic is change data
+ *     capture. The Outbox/CDC layer depends on that distinction being made here.
+ *  3. The alert topic is the harder case, and it is left as a `conflict`. Its
+ *     Events Consumed row gives the payload as a plain `AlertEvent` — pointedly
+ *     unlike rows 2 and 3, which say "Debezium `CdcEvent` containing …" — while
+ *     four other passages across the two documents call it a CDC topic carrying
+ *     CDC events. Both readings are recorded with their own provenance and
+ *     neither is chosen. Resolving it here would destroy the evidence that the
+ *     corpus disagrees with itself, which is precisely what Parent 2 needs.
+ *  4. `restOutbound` is empty because the document says "None found" explicitly
  *     — a positive finding, not a gap. That is recorded in `ambiguities` so a
  *     later reader does not mistake it for an unfinished extract.
+ *  5. Two entries carry an **array** of sources, because their fields were read
+ *     from two different sections. One `{file, heading}` would have had to name
+ *     one of them and silently mis-cite the other.
  *
  * The wrapper below works both as a browser <script> tag (registering into
  * window.EC_EXTRACTS) and as a Node require() for the validator. No build step.
@@ -51,12 +61,25 @@
         'by the same underlying content across policies and channels — and emitting ' +
         'automated close/update actions back to the Alerting service.',
       runtime: 'Java 21, Spring Boot 3.4.3, Spring Kafka, Spring Data MongoDB, KEDA, Mongock',
-      source: { file: FM, heading: 'High-Level Architecture' }
+      // Two sources, because two sections were read: `summary` is the stop_info's
+      // Purpose almost word for word, `runtime` is the flow map's prose under
+      // High-Level Architecture. Citing only the flow map — as this entry first
+      // did — pointed the summary's provenance at a section that does not
+      // contain it, which is worse than no provenance because it looks checked.
+      source: [
+        { file: SI, heading: 'Purpose' },
+        { file: FM, heading: 'High-Level Architecture' }
+      ]
     },
 
     nodes: [
+      // The only node whose group and generation are real values: they are read
+      // off the image, where the Echo Engine box sits inside the "Actioning
+      // Sub-domain" frame and is green, which the legend maps to 3.0.
       { id: 'echo-engine', name: 'Echo Engine', kind: 'service', group: 'Actioning',
-        generation: '3.0', source: { file: IMG, heading: 'Actioning Sub-domain' } },
+        generation: '3.0',
+        summary: 'Detects echo alerts and emits automated close/update actions.',
+        source: { file: IMG, heading: 'Actioning Sub-domain' } },
 
       { id: 'topic:alerting.alertedCommunication', name: 'ec.alerting-service.<tenant>.alertedCommunication',
         kind: 'topic', group: 'none', generation: 'unknown',
@@ -89,8 +112,25 @@
     ],
 
     edges: [
+      // transport is a conflict, deliberately unresolved. See note 3 in the
+      // header: the Events Consumed row says the payload is a plain AlertEvent,
+      // while four other passages call this a CDC topic carrying CDC events.
+      // Both readings, both provenances, no winner — that is Parent 2's call.
       { from: 'topic:alerting.alertedCommunication', to: 'echo-engine',
-        transport: 'kafka', name: 'ec.alerting-service.<tenant>.alertedCommunication',
+        transport: {
+          conflict: [
+            { value: 'kafka',
+              source: { file: FM, heading: 'Events Consumed', row: 1 } },
+            { value: 'cdc',
+              source: [
+                { file: FM, heading: 'High-Level Architecture' },
+                { file: FM, heading: 'Complete Event Flow' },
+                { file: SI, heading: 'Input' },
+                { file: SI, heading: 'Transformation' }
+              ] }
+          ]
+        },
+        name: 'ec.alerting-service.<tenant>.alertedCommunication',
         eventType: 'AlertEvent', direction: 'in',
         consumer: 'AlertEventConsumer.consume',
         consumerGroup: 'ec.echo-engine.alert-event.consumer-group',
@@ -140,32 +180,67 @@
         source: { file: FM, heading: 'Events Published', row: 2 } }
     ],
 
+    // Retry topic names are written out in full. The source table prints the
+    // -retry-0 name in full on every row and abbreviates the second as
+    // `...-retry-1`; that ellipsis is typography, not a topic name, so it is
+    // expanded here from the suffix and index range the same section states.
+    // The `consumer` on each row is the one Events Consumed gives for that same
+    // topic — the retry table itself lists topics only, which is why these
+    // entries cite both sections.
     retries: [
       { consumer: 'AlertEventConsumer', topic: 'ec.alerting-service.<tenant>.alertedCommunication',
-        attempts: '3', retryTopics: ['...-ec-echo-engine-retry-0', '...-ec-echo-engine-retry-1'],
+        attempts: '3',
+        retryTopics: [
+          'ec.alerting-service.<tenant>.alertedCommunication-ec-echo-engine-retry-0',
+          'ec.alerting-service.<tenant>.alertedCommunication-ec-echo-engine-retry-1'
+        ],
         dltTarget: 'ec.alerting-service.<tenant>.alertedCommunication-ec-echo-engine-dlt',
         backoff: 'unknown',
         mechanism: 'AlertConsumerContainerFactory, RetryTopicManager and DefaultErrorHandler — not @RetryableTopic',
-        source: { file: FM, heading: 'Retry and DLT topics', row: 1 } },
+        source: [
+          { file: FM, heading: 'Retry and DLT topics', row: 1 },
+          { file: FM, heading: 'Events Consumed', row: 1 }
+        ] },
 
       { consumer: 'PolicyConfigConsumer', topic: 'ec.config-curator.<tenant>.surveillance-policies',
-        attempts: '3', retryTopics: ['...-ec-echo-engine-retry-0', '...-ec-echo-engine-retry-1'],
+        attempts: '3',
+        retryTopics: [
+          'ec.config-curator.<tenant>.surveillance-policies-ec-echo-engine-retry-0',
+          'ec.config-curator.<tenant>.surveillance-policies-ec-echo-engine-retry-1'
+        ],
         dltTarget: 'ec.config-curator.<tenant>.surveillance-policies-ec-echo-engine-dlt',
         backoff: 'unknown', mechanism: '@RetryableTopic',
-        source: { file: FM, heading: 'Retry and DLT topics', row: 2 } },
+        source: [
+          { file: FM, heading: 'Retry and DLT topics', row: 2 },
+          { file: FM, heading: 'Events Consumed', row: 2 }
+        ] },
 
       { consumer: 'EchoConfigConsumer', topic: 'ec.config-curator.<tenant>.configuration',
-        attempts: '3', retryTopics: ['...-ec-echo-engine-retry-0', '...-ec-echo-engine-retry-1'],
+        attempts: '3',
+        retryTopics: [
+          'ec.config-curator.<tenant>.configuration-ec-echo-engine-retry-0',
+          'ec.config-curator.<tenant>.configuration-ec-echo-engine-retry-1'
+        ],
         dltTarget: 'ec.config-curator.<tenant>.configuration-ec-echo-engine-dlt',
         backoff: 'unknown', mechanism: '@RetryableTopic',
-        source: { file: FM, heading: 'Retry and DLT topics', row: 3 } },
+        source: [
+          { file: FM, heading: 'Retry and DLT topics', row: 3 },
+          { file: FM, heading: 'Events Consumed', row: 3 }
+        ] },
 
       { consumer: 'EchoActionAuditAdapter', topic: 'ec.echo-engine.<tenant>.echoAction',
-        attempts: '3', retryTopics: ['...-ec-echo-engine-retry-0', '...-ec-echo-engine-retry-1'],
+        attempts: '3',
+        retryTopics: [
+          'ec.echo-engine.<tenant>.echoAction-ec-echo-engine-retry-0',
+          'ec.echo-engine.<tenant>.echoAction-ec-echo-engine-retry-1'
+        ],
         dltTarget: 'ec.echo-engine.<tenant>.echoAction-ec-echo-engine-dlt',
         backoff: 'unknown', mechanism: '@RetryableTopic',
         note: 'autoCreateTopics=false for this listener, so its retry and DLT topics are provisioned outside this repository.',
-        source: { file: FM, heading: 'Retry and DLT topics', row: 4 } }
+        source: [
+          { file: FM, heading: 'Retry and DLT topics', row: 4 },
+          { file: FM, heading: 'Events Consumed', row: 4 }
+        ] }
     ],
 
     stores: [
@@ -230,9 +305,16 @@
       { trigger: 'Consumer processing failure',
         route: 'Standard consumer retry then DLT, per application.yaml',
         source: { file: SI, heading: 'Failure paths' } },
+      // Failure paths says only "Validation short-circuits (skip) rather than
+      // failing". What is being validated — non-CREATE and non-policy alerts —
+      // comes from Processing, so both sections are cited rather than putting
+      // Processing's detail under a Failure paths citation that does not say it.
       { trigger: 'Validation failure (non-CREATE or non-policy alert)',
         route: 'Short-circuits to skip rather than failing — no retry, no DLT',
-        source: { file: SI, heading: 'Failure paths' } }
+        source: [
+          { file: SI, heading: 'Failure paths' },
+          { file: SI, heading: 'Processing' }
+        ] }
     ],
 
     restInbound: [
@@ -287,6 +369,16 @@
         foundDuringExtraction: 'true',
         source: { file: SI, heading: 'Transformation' } },
       { item: 'The alert consumer uses a different retry mechanism from the other three: AlertConsumerContainerFactory plus RetryTopicManager plus DefaultErrorHandler, rather than @RetryableTopic. Backoff parameters are not stated for any of the four, so backoff is "unknown" throughout.',
+        foundDuringExtraction: 'true',
+        source: { file: FM, heading: 'Retry and DLT topics' } },
+      { item: 'The document disagrees with itself about the alert topic\'s transport, so edges[0].transport is recorded as an unresolved conflict. Events Consumed row 1 gives the payload as a plain AlertEvent, in pointed contrast to rows 2 and 3 which say "Debezium CdcEvent containing ...". But the High-Level Architecture mermaid names the source "Alert CDC topics", the Complete Event Flow mermaid feeds AlertEventConsumer from "Debezium alert/config events", and the stop_info calls them "alert CDC events from Alerting service" and writes "AlertEvent (CDC)" in its Transformation block. Reading the table alone gives kafka; reading the diagrams and the stop_info gives cdc. Whether Alerting publishes this topic through Debezium is answerable from the Alerting extract, which is Parent 2\'s job, not this one\'s.',
+        foundDuringExtraction: 'true',
+        source: [
+          { file: FM, heading: 'Events Consumed', row: 1 },
+          { file: FM, heading: 'Complete Event Flow' },
+          { file: SI, heading: 'Transformation' }
+        ] },
+      { item: 'Retry topic names in the Retry and DLT topics table are abbreviated: each row prints the -retry-0 name in full and writes the second as "...-retry-1". The extract expands them, using the retry suffix "-ec-echo-engine-retry" and the stated retry indexes 0 and 1 from the same section. The expansion is mechanical rather than inferred, but it is recorded here because the literal string in the document is not a topic name.',
         foundDuringExtraction: 'true',
         source: { file: FM, heading: 'Retry and DLT topics' } }
     ]
