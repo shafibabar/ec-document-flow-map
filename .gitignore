@@ -1,0 +1,8 @@
+# Source architecture documents and the architecture image.
+# These are internal and must never reach git.
+knowledge/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
