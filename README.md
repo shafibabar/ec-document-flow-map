@@ -34,7 +34,33 @@ explicit `unknown` or `conflict` state rather than a plausible guess.
 | `js/` | Isometric projection, routing engine, renderer, controls |
 | `css/` | Presentation |
 | `docs/` | Model schema and notes |
+| `.claude/` | Workflow tooling — hooks, scripts, commands |
 | `knowledge/` | **Gitignored.** Internal source documents, local only |
 
 Adding a service is meant to be a data edit, not a code edit. The model schema is
 documented in `docs/MODEL_SCHEMA.md`.
+
+## How work is tracked
+
+Every change here runs as a tracked project rather than as ad-hoc edits. The full
+rules are in [`CLAUDE.md`](CLAUDE.md); the short version:
+
+- Work is planned before it is built. Planning produces a **parent issue** that
+  records the decisions taken *and* the alternatives rejected, with the tradeoffs.
+- Each task becomes a **child issue** written so that someone with no other
+  context can implement it.
+- **`main` is never edited directly.** Work happens on
+  `issue/<n>-<slug>` branches cut from `integration/<n>-<slug>` branches, and
+  reaches `main` only through a reviewed merge.
+- Implementation is followed by **cold review cycles** — a fresh reviewer each
+  round, repeating until a round finds nothing, capped at five.
+- Progress lives on a private GitHub project board:
+  **Todo → In Progress → In Review → Done**.
+
+This is enforced by hooks in `.claude/`, not by good intentions, so it holds
+across sessions and unattended runs.
+
+**This repo is private and GitHub Pages is off**, because a Pages site is
+world-readable even when published from a private repo, and this map renders real
+service and topic names. A shareable demo built on fictional sample data will
+live in a separate public repo. Opening `index.html` locally needs no server.
