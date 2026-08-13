@@ -26,8 +26,31 @@ const TRANSPORTS = ['kafka', 'rest', 's3', 'mongo', 'elastic', 'cdc'];
 /** Node kinds. Mongo collections are NOT nodes — see docs/MODEL_SCHEMA.md. */
 const KINDS = ['service', 'store', 'topic', 'dlt', 'external'];
 
-/** Store technologies. The estate has three; there is no relational store. */
-const STORES = ['mongo', 's3', 'elastic'];
+/**
+ * Store technologies named in Persistent Store Interactions sections.
+ *
+ * Not three. Cycle 1 wrote `['mongo', 's3', 'elastic']` from issue #3's note
+ * about why `jdbc` is invalid — but that note is about the estate having no
+ * relational store and about which stores get *map stops*, not about which
+ * technologies the documents name. Three of the fifteen services record more:
+ *
+ *   Actioning      Ceph/object store, Hazelcast   (Persistent Store Interactions rows 13-14)
+ *   Quota Manager  Redis                          (### Redis)
+ *   Manual Run     AWS Athena, Archive Elasticsearch (### AWS Athena, ### Archive Elasticsearch)
+ *
+ * A gate that rejects what the document plainly says forces the extractor to
+ * either drop the row or mislabel it, and both are worse than the row. `jdbc`
+ * is still absent from all 33 documents and still not here.
+ */
+const STORES = ['mongo', 's3', 'elastic', 'redis', 'athena', 'ceph', 'hazelcast', 'unknown'];
+
+/**
+ * Edge directions. Documented as a closed set since the schema was written; it
+ * was the one small closed set left unenforced, so `direction: 'inbound'` used
+ * to pass and fifteen authors would have drifted on it exactly as they would
+ * have drifted on `kind` and `transport`.
+ */
+const DIRECTIONS = ['in', 'out', 'read', 'write', 'both'];
 
 /** Sub-domains from the architecture image, plus the two sentinels. */
 const GROUPS = ['Alerting', 'Actioning', 'Search', 'Review', 'Reporting', 'none', 'unknown'];
@@ -48,6 +71,38 @@ const GENERATIONS = ['3.0', 'integrated', 'none', 'unknown'];
 const REQUIRED = {
   nodes: ['id', 'name', 'kind'],
   edges: ['from', 'to', 'transport', 'direction']
+};
+
+/**
+ * Which fields of which collection are drawn from a closed set.
+ *
+ * Table-driven rather than a run of `if (key === ...)` blocks, so that a field
+ * cannot be enum-checked in one place and required in another and end up
+ * diagnosed twice — which is what used to happen: a node with no `kind` came
+ * back as two identical `nodes[0].kind: missing` lines, and the run reported
+ * four "problems" for two faults.
+ */
+const ENUMS = {
+  nodes: { kind: KINDS, group: GROUPS, generation: GENERATIONS },
+  edges: { transport: TRANSPORTS, direction: DIRECTIONS },
+  stores: { store: STORES }
+};
+
+/**
+ * Extra sentence appended when a particular wrong value has a known cause.
+ *
+ * The hint is consulted for non-string values too. It did not used to be: the
+ * `typeof val !== 'string'` branch returned first, so `generation: 3.0` — the
+ * one mistake the schema warns about in bold — produced a message that never
+ * mentioned quoting, and the hint that did was unreachable dead code.
+ */
+const HINTS = {
+  transport: (v) => v === 'jdbc'
+    ? ' "jdbc" appears in none of the 33 documents — this estate has no relational store.'
+    : '',
+  generation: (v) => (v === 3 || v === '3' || v === 3.0)
+    ? ' Quote it: `generation: 3.0` is the JavaScript number 3. Write `generation: "3.0"`.'
+    : ''
 };
 
 /**
@@ -226,11 +281,13 @@ function checkEnum(file, where, val, allowed, hint) {
       if (r && typeof r === 'object') checkEnum(file, `${where}.conflict[${i}]`, r.value, allowed, hint);
     });
   }
+  const extra = hint ? hint(val) : '';
   if (typeof val !== 'string') {
-    return fail(file, where, `must be one of ${allowed.join(', ')}, got ${typeof val} ${JSON.stringify(val)}`);
+    return fail(file, where,
+      `must be one of ${allowed.join(', ')}, got ${typeof val} ${JSON.stringify(val)}.${extra}`);
   }
   if (!allowed.includes(val)) {
-    fail(file, where, `"${val}" is not valid. Allowed: ${allowed.join(', ')}.${hint ? ' ' + hint(val) : ''}`);
+    fail(file, where, `"${val}" is not valid. Allowed: ${allowed.join(', ')}.${extra}`);
   }
 }
 
@@ -254,8 +311,7 @@ function checkFile(file) {
     if (!data.service.id) fail(file, 'service.id', 'missing');
     if (!data.service.name) fail(file, 'service.name', 'missing');
     checkEnum(file, 'service.group', data.service.group, GROUPS);
-    checkEnum(file, 'service.generation', data.service.generation, GENERATIONS,
-      (v) => v === '3' ? 'Write it quoted: unquoted 3.0 is the JavaScript number 3.' : '');
+    checkEnum(file, 'service.generation', data.service.generation, GENERATIONS, HINTS.generation);
     checkSource(file, 'service', data.service.source);
     checkFields(file, 'service', data.service);
   }
@@ -278,24 +334,15 @@ function checkFile(file) {
       checkSource(file, where, entry.source);
       checkFields(file, where, entry);
 
+      const enums = ENUMS[key] || {};
       for (const req of REQUIRED[key] || []) {
+        // Skip anything the enum pass below also diagnoses, or a single
+        // omission is reported as two problems.
+        if (req in enums) continue;
         if (entry[req] === undefined) fail(file, `${where}.${req}`, 'missing');
       }
-
-      if (key === 'edges') {
-        checkEnum(file, `${where}.transport`, entry.transport, TRANSPORTS,
-          (v) => v === 'jdbc'
-            ? '"jdbc" appears nowhere in this estate — the stores are MongoDB, S3 and Elasticsearch.'
-            : '');
-      }
-      if (key === 'nodes') {
-        checkEnum(file, `${where}.kind`, entry.kind, KINDS);
-        checkEnum(file, `${where}.group`, entry.group, GROUPS);
-        checkEnum(file, `${where}.generation`, entry.generation, GENERATIONS,
-          (v) => v === '3' ? 'Write it quoted: unquoted 3.0 is the JavaScript number 3.' : '');
-      }
-      if (key === 'stores') {
-        checkEnum(file, `${where}.store`, entry.store, STORES);
+      for (const [field, allowed] of Object.entries(enums)) {
+        checkEnum(file, `${where}.${field}`, entry[field], allowed, HINTS[field]);
       }
     });
   }

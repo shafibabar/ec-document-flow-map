@@ -11,7 +11,7 @@
  * Read docs/MODEL_SCHEMA.md alongside this file. The schema states the rules;
  * this shows them applied to a document with real awkwardness in it.
  *
- * Five things worth noticing before you copy the pattern:
+ * Six things worth noticing before you copy the pattern:
  *
  *  1. The two documents disagree on tenant placeholder syntax — the flow map
  *     writes `<tenant>`, the stop_info writes `{tenant}`. Cosmetic, but recorded
@@ -20,19 +20,31 @@
  *  2. The config topics arrive as Debezium CdcEvents, so their transport is
  *     `cdc`, not `kafka`. The wire is Kafka; the semantic is change data
  *     capture. The Outbox/CDC layer depends on that distinction being made here.
- *  3. The alert topic is the harder case, and it is left as a `conflict`. Its
- *     Events Consumed row gives the payload as a plain `AlertEvent` — pointedly
- *     unlike rows 2 and 3, which say "Debezium `CdcEvent` containing …" — while
- *     four other passages across the two documents call it a CDC topic carrying
- *     CDC events. Both readings are recorded with their own provenance and
- *     neither is chosen. Resolving it here would destroy the evidence that the
- *     corpus disagrees with itself, which is precisely what Parent 2 needs.
- *  4. `restOutbound` is empty because the document says "None found" explicitly
+ *  3. The alert topic is `cdc` too, and it is deliberately **not** a conflict —
+ *     read this one before you copy anything. Its Events Consumed row gives the
+ *     payload as a plain `AlertEvent`, unlike rows 2 and 3 which say "Debezium
+ *     `CdcEvent` containing …". That is a statement about the message class, in
+ *     a column headed "Payload"; the table says nothing about transport either
+ *     way. Six passages across the two documents do describe the transport, and
+ *     all six say CDC — including the stop_info's "AlertEvent (CDC)", which
+ *     holds both facts in one line. A table and a paragraph using different
+ *     vocabulary for two different aspects of the same edge is not the corpus
+ *     disagreeing with itself, and recording it as a conflict would bury the
+ *     real disagreements under noise. The payload observation is kept in
+ *     `ambiguities` so the evidence survives.
+ *  4. `tenancy[1]` is where a **real** conflict lives: the two documents give
+ *     incompatible answers for which MongoDB database holds the echo state —
+ *     the flow map says the tenant name and that `alcatraz` is *not* used, the
+ *     stop_info says `alcatraz` three times. They cannot both be true, so both
+ *     readings are recorded with their own provenance and neither is chosen.
+ *     That is the test: a conflict is two answers to one question, not two
+ *     vocabularies for one thing.
+ *  5. `restOutbound` is empty because the document says "None found" explicitly
  *     — a positive finding, not a gap. That is recorded in `ambiguities` so a
  *     later reader does not mistake it for an unfinished extract.
- *  5. Two entries carry an **array** of sources, because their fields were read
- *     from two different sections. One `{file, heading}` would have had to name
- *     one of them and silently mis-cite the other.
+ *  6. Several entries carry an **array** of sources, because their fields were
+ *     read from different sections. One `{file, heading}` would have had to name
+ *     one of them and silently mis-cite the rest.
  *
  * The wrapper below works both as a browser <script> tag (registering into
  * window.EC_EXTRACTS) and as a Node require() for the validator. No build step.
@@ -112,31 +124,24 @@
     ],
 
     edges: [
-      // transport is a conflict, deliberately unresolved. See note 3 in the
-      // header: the Events Consumed row says the payload is a plain AlertEvent,
-      // while four other passages call this a CDC topic carrying CDC events.
-      // Both readings, both provenances, no winner — that is Parent 2's call.
+      // transport is `cdc`, and this is NOT a conflict. See note 3 in the
+      // header. `eventType` and `transport` are different facts read from
+      // different sections, so the entry cites both: the Events Consumed row
+      // names the payload class, the diagrams and the stop_info name the
+      // transport.
       { from: 'topic:alerting.alertedCommunication', to: 'echo-engine',
-        transport: {
-          conflict: [
-            { value: 'kafka',
-              source: { file: FM, heading: 'Events Consumed', row: 1 } },
-            { value: 'cdc',
-              source: [
-                { file: FM, heading: 'High-Level Architecture' },
-                { file: FM, heading: 'Complete Event Flow' },
-                { file: SI, heading: 'Input' },
-                { file: SI, heading: 'Transformation' }
-              ] }
-          ]
-        },
+        transport: 'cdc',
         name: 'ec.alerting-service.<tenant>.alertedCommunication',
         eventType: 'AlertEvent', direction: 'in',
         consumer: 'AlertEventConsumer.consume',
         consumerGroup: 'ec.echo-engine.alert-event.consumer-group',
-        note: 'Batch @KafkaListener with virtual-thread group processing.',
+        note: 'Batch @KafkaListener with virtual-thread group processing. The payload class is a plain AlertEvent, not a Debezium CdcEvent envelope as on the two config topics — recorded in ambiguities.',
         purpose: 'Validate and correlate alerted communications, persist echo state, and publish an echo action when the alert is actionable.',
-        source: { file: FM, heading: 'Events Consumed', row: 1 } },
+        source: [
+          { file: FM, heading: 'Events Consumed', row: 1 },
+          { file: FM, heading: 'Complete Event Flow' },
+          { file: SI, heading: 'Input' }
+        ] },
 
       // transport is cdc, not kafka: the payload is a Debezium CdcEvent.
       { from: 'topic:config-curator.surveillance-policies', to: 'echo-engine',
@@ -337,12 +342,41 @@
         examples: 'tenant1 (checked-in default); msuat, msanity, msprod (Morgan Stanley production overlay); conducttest, conductprod (Conduct production overlay)',
         note: 'The active tenant set controls the concrete topic list, MongoDB contexts, migrations and KEDA triggers.',
         source: { file: FM, heading: 'Events Consumed' } },
+      // A real conflict, recorded unresolved. The two documents give
+      // incompatible answers to one question — which database holds the echo
+      // state. The flow map says the database name is the tenant name and says
+      // in terms that `alcatraz` is *not* used; the stop_info says three times
+      // that the state store database *is* `alcatraz`. Neither is a restatement
+      // of the other in different words: they cannot both be true. Choosing
+      // between them needs the service's application.yaml, which is not in this
+      // corpus, so both readings are recorded with their own provenance.
       { subject: 'MongoDB database name',
-        placeholder: 'tenant name used as the database name',
-        resolvedFrom: 'TenantRepositoryFactory',
-        note: 'Collection names are NOT tenant-derived, except the explicit _<windowToken> suffix on policy and echo-configuration collections. The checked-in spring.data.mongodb.database value "alcatraz" is not used by the tenant repository factory for these domain repositories.',
+        placeholder: {
+          conflict: [
+            { value: 'the tenant name is used as the database name',
+              source: { file: FM, heading: 'Persistent Store Interactions' } },
+            { value: 'alcatraz',
+              source: [
+                { file: SI, heading: 'Processing' },
+                { file: SI, heading: 'Dependencies' },
+                { file: SI, heading: 'Configuration' }
+              ] }
+          ]
+        },
+        resolvedFrom: {
+          conflict: [
+            { value: 'TenantRepositoryFactory',
+              source: { file: FM, heading: 'Persistent Store Interactions' } },
+            { value: 'TenantMongoConfig',
+              source: { file: SI, heading: 'Dependencies' } }
+          ]
+        },
+        note: 'Collection names are NOT tenant-derived, except the explicit _<windowToken> suffix on policy and echo-configuration collections.',
         examples: 'unknown',
-        source: { file: FM, heading: 'Persistent Store Interactions' } }
+        source: [
+          { file: FM, heading: 'Persistent Store Interactions' },
+          { file: SI, heading: 'Dependencies' }
+        ] }
     ],
 
     ambiguities: [
@@ -371,12 +405,19 @@
       { item: 'The alert consumer uses a different retry mechanism from the other three: AlertConsumerContainerFactory plus RetryTopicManager plus DefaultErrorHandler, rather than @RetryableTopic. Backoff parameters are not stated for any of the four, so backoff is "unknown" throughout.',
         foundDuringExtraction: 'true',
         source: { file: FM, heading: 'Retry and DLT topics' } },
-      { item: 'The document disagrees with itself about the alert topic\'s transport, so edges[0].transport is recorded as an unresolved conflict. Events Consumed row 1 gives the payload as a plain AlertEvent, in pointed contrast to rows 2 and 3 which say "Debezium CdcEvent containing ...". But the High-Level Architecture mermaid names the source "Alert CDC topics", the Complete Event Flow mermaid feeds AlertEventConsumer from "Debezium alert/config events", and the stop_info calls them "alert CDC events from Alerting service" and writes "AlertEvent (CDC)" in its Transformation block. Reading the table alone gives kafka; reading the diagrams and the stop_info gives cdc. Whether Alerting publishes this topic through Debezium is answerable from the Alerting extract, which is Parent 2\'s job, not this one\'s.',
+      { item: 'The alert topic carries a plain AlertEvent payload, not a Debezium CdcEvent envelope as the two config topics do, yet its transport is recorded as cdc. This is not a contradiction and is deliberately NOT recorded as a conflict. The Events Consumed column is headed "Payload" and states the message class; the table has no transport column at all. Every passage that describes how these events arrive says CDC: the High-Level Architecture mermaid names the source "Alert CDC topics", the Complete Event Flow mermaid feeds AlertEventConsumer from "Debezium alert/config events", the stop_info Short narrative says "Consumes alert CDC events", its Input says "alert CDC events from Alerting service", and its Dependencies says "Kafka - alert CDC + config CDC". The stop_info Transformation writes "AlertEvent (CDC)", holding both facts in one line. Whether the Alerting service unwraps the Debezium envelope before publishing is answerable only from the Alerting extract, which is Parent 2\'s job; it does not change what this document says.',
         foundDuringExtraction: 'true',
         source: [
           { file: FM, heading: 'Events Consumed', row: 1 },
           { file: FM, heading: 'Complete Event Flow' },
           { file: SI, heading: 'Transformation' }
+        ] },
+
+      { item: 'The two documents give incompatible answers for the MongoDB database that holds the echo state, so tenancy[1] records a conflict rather than a value. EVENT_FLOW_MAP.md says TenantRepositoryFactory "constructs the Mongo database factory with the tenant name as the database name" and that "the checked-in spring.data.mongodb.database: alcatraz value is not used by the tenant repository factory for these domain repositories". ec-echo-engine_stop_info.md says the opposite in three places: Processing step 3 ("the MongoDB (alcatraz) state store"), Dependencies ("MongoDB (alcatraz, per-tenant isolation via TenantMongoConfig)") and Configuration ("alcatraz state store DB"). The two also name different classes for the same mechanism, TenantRepositoryFactory versus TenantMongoConfig. Resolution needs the service\'s configuration, which is not in this corpus.',
+        foundDuringExtraction: 'true',
+        source: [
+          { file: FM, heading: 'Persistent Store Interactions' },
+          { file: SI, heading: 'Dependencies' }
         ] },
       { item: 'Retry topic names in the Retry and DLT topics table are abbreviated: each row prints the -retry-0 name in full and writes the second as "...-retry-1". The extract expands them, using the retry suffix "-ec-echo-engine-retry" and the stated retry indexes 0 and 1 from the same section. The expansion is mechanical rather than inferred, but it is recorded here because the literal string in the document is not a topic name.',
         foundDuringExtraction: 'true',

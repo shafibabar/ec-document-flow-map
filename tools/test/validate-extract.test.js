@@ -27,14 +27,29 @@ const path = require('node:path');
 const VALIDATOR = path.join(__dirname, '..', 'validate-extract.js');
 const FIXTURES = path.join(__dirname, 'fixtures');
 
-/** Runs the validator; returns {code, out}. Never throws on non-zero exit. */
+/**
+ * Runs the validator; returns {code, out, diag}. Never throws on non-zero exit.
+ *
+ * `diag` is `out` with the fixture file names stripped out, and it is the one to
+ * assert diagnoses against. Every problem line is printed as
+ * `basename: where: message`, and the fixtures are named after the fault they
+ * carry — so `/circular/i` matched `circular.js` whatever the validator actually
+ * said, and `/root/` and `/array/` both matched any line at all from
+ * `root-array.js`. Review cycle 2 found seven assertions passing on the file
+ * name rather than the diagnosis; two tests had no other assertion than the exit
+ * code. Asserting against `diag` makes them mean what their names claim.
+ */
 function run(...files) {
+  let code = 0;
+  let out;
   try {
-    const out = execFileSync('node', [VALIDATOR, ...files], { encoding: 'utf8' });
-    return { code: 0, out };
+    out = execFileSync('node', [VALIDATOR, ...files], { encoding: 'utf8' });
   } catch (e) {
-    return { code: e.status, out: (e.stdout || '') + (e.stderr || '') };
+    code = e.status;
+    out = (e.stdout || '') + (e.stderr || '');
   }
+  const diag = files.reduce((s, f) => s.split(path.basename(f)).join('<file>'), out);
+  return { code, out, diag };
 }
 
 test('a conforming extract passes with exit 0', () => {
@@ -51,22 +66,25 @@ test('an entry with a missing source fails', () => {
 test('a missing source names the entity type and index, not just a count', () => {
   const r = run(path.join(FIXTURES, 'missing-source.js'));
   // The offending entry is edges[1] in the fixture.
-  assert.match(r.out, /edges/, 'must name the entity type');
-  assert.match(r.out, /\b1\b/, 'must name the index of the offending entry');
+  // `edges[1]` literally. Asserting /\b1\b/ — as this test used to — matched the
+  // "1 problem(s) found" summary line, so it passed just as happily when the
+  // fault was on edges[0]. Verified by moving it there.
+  assert.match(r.diag, /edges\[1\]/, 'must name the entity type and the index');
   assert.match(r.out, /missing-source\.js/, 'must name the file');
 });
 
 test('transport "jdbc" is rejected — it appears nowhere in the estate', () => {
   const r = run(path.join(FIXTURES, 'bad-transport.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /jdbc/i);
-  assert.match(r.out, /transport/i);
+  assert.match(r.diag, /jdbc/i);
+  assert.match(r.diag, /\.transport:/, 'must name the field, not just the file');
 });
 
 test('null is rejected where "unknown" is required', () => {
   const r = run(path.join(FIXTURES, 'null-not-unknown.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /null/i);
+  assert.match(r.diag, /is null/, 'must diagnose the null, not merely name the file');
+  assert.match(r.diag, /unknown/, 'and say what to write instead');
 });
 
 test('a conflict entry with both readings and both sources is valid', () => {
@@ -77,14 +95,14 @@ test('a conflict entry with both readings and both sources is valid', () => {
 test('a conflict with only one reading is rejected', () => {
   const r = run(path.join(FIXTURES, 'bad-conflict.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /conflict/i);
+  assert.match(r.diag, /conflict has 1 reading\(s\)/);
 });
 
 test('all problems are reported, not just the first', () => {
   const r = run(path.join(FIXTURES, 'multi-problem.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /jdbc/i, 'should report the bad transport');
-  assert.match(r.out, /source/i, 'and also the missing source');
+  assert.match(r.diag, /jdbc/i, 'should report the bad transport');
+  assert.match(r.diag, /missing source/, 'and also the missing source');
 });
 
 test('several files can be validated in one invocation', () => {
@@ -122,9 +140,9 @@ test('a placeholder source is rejected, not just an empty one', () => {
   // { file: 'TODO' } passes every emptiness check while carrying no provenance.
   const r = run(path.join(FIXTURES, 'placeholder-source.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /placeholder/i);
-  assert.match(r.out, /source\.file/);
-  assert.match(r.out, /source\.heading/);
+  assert.match(r.diag, /is a placeholder/);
+  assert.match(r.diag, /source\.file/);
+  assert.match(r.diag, /source\.heading/);
 });
 
 test('jdbc cannot be smuggled through a conflict wrapper', () => {
@@ -132,25 +150,25 @@ test('jdbc cannot be smuggled through a conflict wrapper', () => {
   // conflict bypassed the one rule the issue names explicitly.
   const r = run(path.join(FIXTURES, 'conflict-transport.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /jdbc/i);
-  assert.match(r.out, /conflict\[0\]/, 'must name which reading is invalid');
+  assert.match(r.diag, /jdbc/i);
+  assert.match(r.diag, /conflict\[0\]/, 'must name which reading is invalid');
 });
 
 test('an empty string is rejected where "unknown" is required', () => {
   const r = run(path.join(FIXTURES, 'empty-string.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /attempts/);
-  assert.match(r.out, /backoff/);
-  assert.match(r.out, /unknown/, 'the message must say what to write instead');
+  assert.match(r.diag, /attempts/);
+  assert.match(r.diag, /backoff/);
+  assert.match(r.diag, /unknown/, 'the message must say what to write instead');
 });
 
 test('structural gaps fail: an edge with no endpoints, a node with an invented kind', () => {
   const r = run(path.join(FIXTURES, 'structural.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /edges\[0\]\.from/);
-  assert.match(r.out, /edges\[0\]\.to/);
-  assert.match(r.out, /kind/);
-  assert.match(r.out, /queue/, 'must quote the invalid value back');
+  assert.match(r.diag, /edges\[0\]\.from/);
+  assert.match(r.diag, /edges\[0\]\.to/);
+  assert.match(r.diag, /nodes\[0\]\.kind/);
+  assert.match(r.diag, /"queue" is not valid/, 'must quote the invalid value back');
 });
 
 test('source may be an array when an entry was read from two sections', () => {
@@ -166,22 +184,72 @@ test('a null transformation is reported, and earlier problems survive it', () =>
   // trace instead of the list of things to fix.
   const r = run(path.join(FIXTURES, 'broken-transformation.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /transformation/);
+  assert.match(r.diag, /^\s*<file>: transformation:/m, 'must diagnose the transformation itself');
   assert.doesNotMatch(r.out, /TypeError/, 'must not crash');
-  assert.match(r.out, /jdbc/i, 'the problem found before the crash must still be reported');
+  assert.match(r.diag, /jdbc/i, 'the problem found before the crash must still be reported');
 });
 
 test('a file exporting an array is diagnosed as such', () => {
   const r = run(path.join(FIXTURES, 'root-array.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /root/);
-  assert.match(r.out, /array/);
+  assert.match(r.diag, /root: exported an array/);
 });
 
 test('a circular extract is reported rather than hanging', () => {
   const r = run(path.join(FIXTURES, 'circular.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /circular/i);
+  assert.match(r.diag, /is a circular reference/);
+});
+
+// ---------------------------------------------------------------------------
+// Added in review cycle 2. The first four are the gate being *loosened* where it
+// had been tightened past what the documents say; the last two are diagnoses the
+// tool promised and did not deliver.
+// ---------------------------------------------------------------------------
+
+test('every store technology the corpus names is accepted', () => {
+  // The enum was mongo/s3/elastic, which rejects Ceph and Hazelcast (Actioning),
+  // Redis (Quota Manager) and Athena (Manual Run) — three of the fifteen
+  // services could not record what their document plainly says.
+  const r = run(path.join(FIXTURES, 'stores-technologies.js'));
+  assert.strictEqual(r.code, 0, `these are all real store rows:\n${r.out}`);
+});
+
+test('a store technology no document names is still rejected', () => {
+  // Widening the enum must not turn it into a free-for-all.
+  const r = run(path.join(FIXTURES, 'bad-store.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /"postgres" is not valid/);
+});
+
+test('an invented direction is rejected', () => {
+  // Documented as a closed set from the start and never enforced, so
+  // direction: "inbound" passed while kind and transport were checked.
+  const r = run(path.join(FIXTURES, 'bad-direction.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /edges\[0\]\.direction/);
+  assert.match(r.diag, /"inbound" is not valid/);
+});
+
+test('an unquoted generation is diagnosed as the quoting mistake it is', () => {
+  // `generation: 3.0` is the number 3. The hint that said so was unreachable:
+  // the non-string branch returned before it was consulted, and it compared
+  // against the string '3' anyway.
+  const r = run(path.join(FIXTURES, 'unquoted-generation.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /got number 3/);
+  assert.match(r.diag, /Quote it/, 'the message must name the cause, not just the type');
+});
+
+test('one omission is reported once, not twice', () => {
+  // `direction` is both a REQUIRED field and an enum field, and each pass used
+  // to diagnose the omission separately — so a node with no `kind` and an edge
+  // with no `transport` came back as four identical-looking lines for two
+  // faults, against the issue's requirement to name the offending entry rather
+  // than inflate a count.
+  const r = run(path.join(FIXTURES, 'structural.js'));
+  const lines = r.diag.split('\n').filter((l) => /edges\[0\]\.direction: missing/.test(l));
+  assert.strictEqual(lines.length, 1, `expected one line, got ${lines.length}:\n${r.out}`);
 });
 
 test('the real worked example conforms', () => {

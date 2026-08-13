@@ -23,7 +23,7 @@ Note the quoted glob. `node --test tools/test/` does **not** work on Node 22 —
 tries to `require()` the directory as a module and fails with `MODULE_NOT_FOUND`.
 Bare `node --test` from the repo root also works but additionally discovers the
 fixture files under `tools/test/fixtures/` and counts each as a passing "test",
-reporting 37 rather than the 20 real ones. Use the glob, and expect 20.
+reporting 46 rather than the 25 real ones. Use the glob, and expect 25.
 
 ---
 
@@ -127,12 +127,22 @@ inference without a stated basis is a guess wearing a badge.
 
 ## Conflicts
 
+A conflict records that two sources disagree, without picking a winner. The
+example below is not invented: it is `tenancy[1]` in the worked extract. Echo
+Engine's two documents give incompatible answers to one question — which MongoDB
+database holds the echo state:
+
 ```js
-attempts: {
+placeholder: {
   conflict: [
-    { value: '3', source: { file: 'Gateway/EVENT_FLOW_MAP.md', heading: 'Kafka consumer configuration' } },
-    { value: '1', source: { file: 'Gateway/EVENT_FLOW_MAP.md', heading: 'Deployment overlays' } },
-    { value: '4', source: { file: 'Gateway/ec-gateway_stop_info.md', heading: 'Configuration' } }
+    { value: 'the tenant name is used as the database name',
+      source: { file: 'Echo Engine/EVENT_FLOW_MAP.md', heading: 'Persistent Store Interactions' } },
+    { value: 'alcatraz',
+      source: [
+        { file: 'Echo Engine/ec-echo-engine_stop_info.md', heading: 'Processing' },
+        { file: 'Echo Engine/ec-echo-engine_stop_info.md', heading: 'Dependencies' },
+        { file: 'Echo Engine/ec-echo-engine_stop_info.md', heading: 'Configuration' }
+      ] }
   ]
 }
 ```
@@ -145,6 +155,31 @@ conflicts, inside an array element or a nested object, are checked too.
 At least **two** readings, each with its own `source` (which may itself be an
 array, when one reading rests on several sections). One reading is not a
 conflict — record the value directly.
+
+Every `file` and `heading` in that example is real, and yours must be too. A
+snippet is not exempt from provenance: if you cannot point at the heading, you
+have not read it.
+
+### What is *not* a conflict
+
+**A conflict is two answers to one question, not two vocabularies for one
+thing.** These documents are auto-generated, and the same fact routinely appears
+in a table, a paragraph and a mermaid label in three different wordings. If you
+record every such difference as a conflict, the accuracy report fills with noise
+and the real disagreements — like the one above — are lost in it.
+
+The test before you write a conflict:
+
+1. **Do the two passages answer the same question?** A column headed `Payload`
+   answers "what class is the message", not "how does it arrive". A cell that
+   does not mention CDC is not a passage claiming the topic is not CDC.
+2. **Could both be true at once?** If yes, it is not a conflict. Echo Engine's
+   `stop_info` writes `AlertEvent (CDC)` — one line holding both the payload
+   class and the transport, which is the document telling you they are
+   compatible.
+3. **If it is not a conflict but you noticed it, write it in `ambiguities`**
+   with `foundDuringExtraction: 'true'`. Nothing is lost that way; the evidence
+   survives without a false disagreement being asserted.
 
 ---
 
@@ -212,6 +247,51 @@ Record topics and DLTs as nodes. **These are not nodes:**
 - **Retry topics.** They live in `retries[].retryTopics`. Only the DLT gets a
   node, because the DLT is where a document's journey visibly ends.
 
+#### `id` conventions — this is the merge key
+
+Parent 2 merges fifteen extracts by joining on `id`. Two agents inventing two ids
+for one thing produces two nodes on the map, so the prefixes are fixed:
+
+| Kind | Form | Example |
+|---|---|---|
+| `service` | the service slug, no prefix | `echo-engine` |
+| `topic` | `topic:` + producer + `.` + last segment | `topic:echo-engine.echoAction` |
+| `dlt` | `dlt:` + last segment of the source topic | `dlt:echoAction` |
+| `store` | `store:` + the name as the document writes it | `store:surveil.av5`, `store:EC-S3` |
+| `external` | `external:` + slug of the label | `external:archive` |
+
+Slugs for services and external systems are lower-case. Store and topic ids keep
+the name exactly as the document or Parent #3 writes it, because that string is
+what the join matches on. The literal name always also goes in `name`, with
+placeholders intact. If a topic's producer is not named in your document, use the
+topic's own distinguishing segment rather than guessing at a producer.
+
+#### Which stores become nodes
+
+Parent #3 decided this and it is not open: the only store *stops* are **`EA-S3`**
+and **`EC-S3`** (S3), and **`surveil.av5`** and **`review.v1`** (Elasticsearch).
+Give those a `kind: 'store'` node when your document interacts with them, and an
+edge with `transport: 's3'` or `'elastic'` and `direction: 'read'` / `'write'`.
+
+Everything else stays in `stores[]` with no node and no edge — every Mongo
+collection, every outbox, every Redis, Hazelcast, Ceph and Athena interaction.
+`mongo` is in the transport enum because Parent #3 fixed the six transports, not
+because Mongo interactions are drawn; if you do write a `mongo` edge, its `to`
+must be a `store` node you declared.
+
+#### External systems
+
+Integrated (non-service) systems get `kind: 'external'` nodes: **Archive**,
+**Cognition Analytics**, **Derived Store** and the purple boxes on the image such
+as the EA Indexing Gateway. Their `generation` is `integrated`. Give them
+`group: 'none'` unless the image draws them inside a sub-domain frame.
+
+A row in `restOutbound[]` whose target is one of those, or another service in the
+estate, also gets an edge: `transport: 'rest'`, `direction: 'out'`, `name` set to
+the method and path. A `restInbound[]` row does **not** produce an edge — the
+caller is outside this extract's knowledge, and inventing a `from` for it is a
+guess. This is why the worked example has a `restInbound` row and no `rest` edge.
+
 `retries[].dltTarget` holds the DLT topic pattern, character-for-character equal
 to the `name` of the corresponding `dlt` node — that string equality is how the
 two join during the merge, so do not abbreviate one of them.
@@ -225,50 +305,99 @@ coordinates here.
 |---|---|
 | `from`, `to` | Required. Node ids. An edge missing one silently vanishes from the graph instead of failing, so both are enforced |
 | `transport` | Required. **`kafka` · `rest` · `s3` · `mongo` · `elastic` · `cdc`** |
-| `direction` | Required. `in` · `out` · `read` · `write` · `both`. Always determinable — no document leaves it open |
+| `direction` | Required, and enum-checked. `in` · `out` · `read` · `write` · `both`. Always determinable — no document leaves it open. `in`/`out` for Kafka and REST, `read`/`write` for stores |
 | `name` | Topic name or endpoint path, placeholders intact. `unknown` if the document truly never names it |
 | `eventType` | Payload DTO or message type |
 | `consumer` / `publisher` | Class and method |
 | `consumerGroup`, `purpose`, `trigger`, `note` | Where documented |
 
-**`jdbc` is not a valid transport.** It appears nowhere in this estate; the
-stores are MongoDB, S3 and Elasticsearch. The validator rejects it by name.
+**`jdbc` is not a valid transport.** It appears in none of the 33 documents, and
+there is no relational store in this estate. The validator rejects it by name.
 
-**`cdc` versus `kafka` is a real distinction, not a nicety.** If the payload is a
-Debezium `CdcEvent`, or the service writes an outbox collection that Debezium
-publishes from, the transport is `cdc`. The wire is Kafka; the semantic is change
-data capture. The Outbox/CDC layer — the one that corrects the belief that
-services publish their own events — depends entirely on this being got right
-during extraction. Twelve of sixteen services use the pattern.
+**`cdc` versus `kafka` is a real distinction, not a nicety.** The wire is Kafka
+either way; the semantic is change data capture. The Outbox/CDC layer — the one
+that corrects the belief that services publish their own events — depends
+entirely on this being got right during extraction. Twelve of sixteen services
+use the pattern.
 
-**When a document is not consistent with itself about this, record a conflict.**
-The worked example does exactly that: Echo Engine's Events Consumed table gives
-the alert topic's payload as a plain `AlertEvent`, in pointed contrast to the two
-rows beneath it that say "Debezium `CdcEvent` containing …", while the same
-file's two mermaid diagrams and the `stop_info` call it a CDC topic carrying CDC
-events. Deciding between those readings needs the *producing* service's extract,
-which you do not have and must not go and read. Record both.
+`transport` is a claim about **how the message arrives**, not about what class it
+deserialises to. Write `cdc` when the document says any of:
+
+- the payload is a Debezium `CdcEvent`;
+- the service writes an outbox collection that Debezium publishes from;
+- the topic is described as a CDC topic, or the events as CDC events, in prose
+  or in a mermaid label.
+
+Any one of those is sufficient. **Do not treat a `Payload` column that names a
+domain class as evidence against CDC** — that column answers a different
+question, and most of these tables have no transport column at all.
+
+The worked example is exactly this case, and it is worth reading before you copy
+it. Echo Engine's Events Consumed row 1 gives the alert payload as a plain
+`AlertEvent`, unlike rows 2 and 3 which say "Debezium `CdcEvent` containing …".
+Six other passages — both mermaid diagrams, the `stop_info`'s Short narrative,
+Input, Dependencies and its `AlertEvent (CDC)` transformation line — describe the
+transport, and all six say CDC. So the edge is `cdc`, the payload observation
+goes in `ambiguities`, and **no conflict is recorded**: see "What is *not* a
+conflict" above. Whether the producing service unwraps the Debezium envelope is
+answerable only from *its* extract, which you must not go and read — and it does
+not change what your document says.
 
 ### `retries[]`
 
 `consumer` · `topic` · `attempts` · `retryTopics[]` · `dltTarget` · `backoff` ·
 `mechanism` · `note` · `source`
 
-**No document has a `Retry/DLT Configuration` section.** This data is scattered
-across Events Consumed rows, prose paragraphs and mermaid diagrams — gather from
-all three. Any field may be `"unknown"`; partial retry data is normal.
+**Four of the sixteen documents have a retry section, under four different
+names. Check yours before you go hunting through prose:**
+
+| File | Heading |
+|---|---|
+| `Policy Evaluator/EVENT_FLOW_MAP.md` | `### Retry / DLT Configuration` |
+| `Echo Engine/EVENT_FLOW_MAP.md` | `### Retry and DLT topics` |
+| `Conduct Audit Service/EVENT_FLOW_MAP.md` | `### Retry and DLT behavior` |
+| `Centralized Audit/EVENT_FLOW_MAP.md` | `### 1. Retry / DLT Publishing (via RetryTopicManager)` |
+
+**For the other twelve there is no such section** — the data is scattered across
+Events Consumed rows, prose paragraphs and mermaid diagrams, and must be gathered
+from all three. Any field may be `"unknown"`; partial retry data is normal.
+
+Cite the section you actually read. Do not cite one of the four headings above
+unless it is in *your* file.
 
 **DLT = Dead Letter Topic**, not DLQ. Kafka has no queues. The term appears in 29
 of 33 documents; "DLQ" appears in none.
 
 ### `stores[]`
 
-`store` (required: `mongo` · `s3` · `elastic`) · `entity` · `collection` ·
-`repository` · `operations` · `calledBy` · `windowed` · `source`
+`store` (required, see below) · `entity` · `collection` · `repository` ·
+`operations` · `calledBy` · `windowed` · `source`
+
+`store` is one of: `mongo` · `s3` · `elastic` · `redis` · `athena` · `ceph` ·
+`hazelcast` · `unknown`.
+
+The last four are not padding. The estate is mostly MongoDB, S3 and
+Elasticsearch, but three of the fifteen services record more, and the rule is to
+write what the document says:
+
+| Service | Section | Technology |
+|---|---|---|
+| Actioning | `Persistent Store Interactions` rows 13–14 | `Ceph/object store`, `Hazelcast` |
+| Quota Manager | `### Redis` | `Redis` |
+| Manual Run | `### AWS Athena`, `### Archive Elasticsearch` | `Athena`, and Elasticsearch |
+
+Map the document's wording onto the value: `MongoDB` → `mongo`, `AWS S3` /
+`S3 bucket` → `s3`, `Elasticsearch` / `Archive index (hlrest)` → `elastic`,
+`Ceph/object store` → `ceph`. If your document names a store technology not on
+the list, use `unknown`, put the document's exact wording in `entity` or `note`,
+and raise it in `ambiguities` — do not force it into the nearest value.
 
 From Persistent Store Interactions. Feeds the State layer. These entries are the
 *only* record of a Mongo collection — collections are not nodes, so anything left
 out here is not in the model at all.
+
+**A `stores[]` entry does not by itself create an edge or a node.** See "Which
+stores become nodes" under `nodes[]`.
 
 ### `transformation` — one object
 
@@ -359,7 +488,8 @@ substitutes for it.
 | `source.row`, when present, is an integer ≥ 1 | `source.row must be a 1-based integer` |
 | All eleven collections declared, `transformation` present and an object | `tenancy: missing` |
 | `transport` ∈ the six, inside a conflict as well as outside | `edges[0].transport: "jdbc" is not valid` |
-| `kind`, `group`, `generation`, `store` ∈ their sets | `nodes[0].kind: "queue" is not valid` |
+| `kind`, `group`, `generation`, `store`, `direction` ∈ their sets | `nodes[0].kind: "queue" is not valid` |
+| `generation` written unquoted is caught by name | `got number 3. Quote it: … Write `generation: "3.0"`` |
 | Edges have `from`, `to`, `transport`, `direction`; nodes have `id`, `name`, `kind` | `edges[0].to: missing` |
 | No `null` and no empty string, at any depth | `retries[0].retryTopics[1]: is null` |
 | A conflict has ≥ 2 readings, each with a value and a source | `conflict has 1 reading(s)` |
@@ -380,6 +510,10 @@ stops at the first, and a broken entry never costs you the report on the rest.
 - [ ] Retry data gathered from tables **and** prose **and** mermaid
 - [ ] No `null` and no empty string anywhere; silences are `"unknown"`; known absences are `"none"`
 - [ ] No conflict resolved — both readings recorded with both sources
+- [ ] No conflict *invented* either — each one is two answers to one question,
+      not a table and a paragraph wording the same fact differently
+- [ ] Node ids follow the fixed prefixes; store and external nodes only where
+      the rules above allow them
 - [ ] Every `source` names the section its fields actually came from; an entry
       drawing on two sections cites both
 - [ ] Nothing abbreviated: a name the document shortens with `...` is written out
