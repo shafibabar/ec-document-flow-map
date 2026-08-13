@@ -85,6 +85,12 @@ characters on purpose.
 Board states: **Todo → In Progress → In Review → Done**
 (`Todo` keeps GitHub's default spelling; it is the same state as `ToDo`.)
 
+**Setting a board status to `Done` closes the issue.** That is one of GitHub's
+built-in project workflows, not something this tooling does, and moving the
+status back to `Todo` afterwards does *not* reopen it. So do not move an issue
+to Done to "see what happens" — it is a real state change with a side effect.
+Verified on this board.
+
 ### Review cycles
 
 - A **new agent** every cycle. Never reuse the previous reviewer; never review

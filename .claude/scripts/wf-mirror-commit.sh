@@ -66,7 +66,12 @@ mirror_one() {
 
   if WF_MIN_COMMENT_CHARS=1 "$here/wf-comment.sh" "$issue" "$tmp" --also-parent >/dev/null 2>&1; then
     printf '%s %s\n' "$sha" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$ledger"
-    printf 'wf: commit %s mirrored to #%s and its parent\n' "${sha:0:8}" "$issue" >&2
+    parent="$(wf_parent_of "$issue" 2>/dev/null || true)"
+    if [ -n "$parent" ]; then
+      printf 'wf: commit %s mirrored to #%s and parent #%s\n' "${sha:0:8}" "$issue" "$parent" >&2
+    else
+      printf 'wf: commit %s mirrored to #%s (no parent issue)\n' "${sha:0:8}" "$issue" >&2
+    fi
   else
     printf 'wf: could not mirror commit %s to #%s (offline?). The commit itself is fine.\n' "${sha:0:8}" "$issue" >&2
     printf 'wf: re-run later with: .claude/scripts/wf-mirror-commit.sh --retry\n' >&2
