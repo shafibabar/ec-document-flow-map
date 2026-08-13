@@ -1,0 +1,25 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>EC Document Flow Map</title>
+<link rel="stylesheet" href="css/map.css">
+
+<!--
+  Entry point. Opens directly from the filesystem: no build step, no bundler,
+  no dependencies, no network calls.
+
+  Load order matters. The model is data and loads first; every module below it
+  reads from the model and never hardcodes a service, topic or event name.
+-->
+
+<canvas id="map"></canvas>
+<div id="ui"><!-- scenario picker, layer control, transport controls --></div>
+
+<script src="data/model.js"></script>
+<script src="js/iso.js"></script>
+<script src="js/graph.js"></script>
+<script src="js/router.js"></script>
+<script src="js/envelope.js"></script>
+<script src="js/render.js"></script>
+<script src="js/layers.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/main.js"></script>

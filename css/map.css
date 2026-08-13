@@ -1,0 +1,32 @@
+/*
+ * Presentation only. Full-bleed canvas, on-map controls, readable on a phone
+ * and on a large screen.
+ */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0e1116;
+  color: #e6e8ec;
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+#map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* Controls sit on the map, not beside it. */
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#ui > * { pointer-events: auto; }
