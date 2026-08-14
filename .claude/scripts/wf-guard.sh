@@ -72,17 +72,61 @@ if [ "${EC_ALLOW_MAIN:-0}" = "1" ]; then
 fi
 
 # --- knowledge/ protection, on every branch -----------------------------------
+#
 # .gitignore already covers this; the guard catches the one thing .gitignore
 # cannot: an explicit force-add.
-case "$subject" in
-  *"git add"*knowledge*|*"git stage"*knowledge*|*"git rm --cached"*knowledge*)
-    deny "That command names knowledge/ in a git staging operation.
+#
+# This check matches the OPERAND of a staging verb, not the command string.
+# It used to be a shell glob, `*"git add"*knowledge*`, which matches whenever
+# the first string appears anywhere before the second — so a commit that staged
+# with `git add -A` and mentioned knowledge/ in its message was refused, while
+# the same two operations written in the other order were allowed (issue #23).
+#
+# That is not merely inconvenient. CLAUDE.md instructs agents to record the
+# preflight result in the commit message, so the documented workflow produced
+# exactly the string that tripped the guard — and an agent blocked that way most
+# naturally concludes the message is at fault and deletes the verification line,
+# quietly removing the audit trail the rule exists to create. A gate that
+# punishes correct behaviour teaches agents to route around it.
+#
+# The analysis runs in node because it needs to strip heredoc bodies and split
+# on statement separators, which is fiddly and error-prone in shell.
+verdict="$(printf '%s' "$subject" | node -e '
+  let s = "";
+  process.stdin.on("data", (d) => (s += d)).on("end", () => {
+    // Drop heredoc bodies: their content is data, never an operand.
+    s = s.replace(/<<-?\s*[\x27"]?(\w+)[\x27"]?[\s\S]*?^\s*\1\s*$/gm, " ");
+    // A trailing unterminated heredoc still must not be read as arguments.
+    s = s.replace(/<<-?\s*[\x27"]?\w+[\x27"]?[\s\S]*$/m, " ");
+
+    const STAGING = /^(add|stage|rm)$/;
+    for (const stmt of s.split(/[;|&\n]+/)) {
+      const tok = stmt.trim().split(/\s+/).filter(Boolean);
+      const g = tok.indexOf("git");
+      if (g === -1 || !STAGING.test(tok[g + 1] || "")) continue;
+      for (const raw of tok.slice(g + 2)) {
+        if (raw.startsWith("-")) continue;                 // a flag, not a path
+        const a = raw.replace(/^[\x27"]|[\x27"]$/g, "").replace(/^\.\//, "");
+        // knowledge or knowledge/... — but not knowledgebase/...
+        if (/^knowledge(\/|$)/.test(a)) return process.stdout.write("BLOCK:" + a);
+      }
+    }
+    process.stdout.write("OK");
+  });
+' 2>/dev/null || echo "OK")"
+
+case "$verdict" in
+  BLOCK:*)
+    deny "That command stages \"${verdict#BLOCK:}\", which is inside knowledge/.
 
 knowledge/ holds internal architecture documents and must never reach git. It is
 gitignored, but 'git add -f' would override that, so this is blocked outright.
 
 If you genuinely need to inspect what git thinks about knowledge/, use the
-read-only 'git check-ignore -v knowledge/' instead."
+read-only 'git check-ignore -v knowledge/' instead.
+
+Note: only a path given TO a staging verb triggers this. Mentioning knowledge/
+in a commit message or a grep is fine — record your preflight result as usual."
     ;;
 esac
 
