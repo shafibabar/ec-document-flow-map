@@ -31,6 +31,7 @@
     <span id="timer" class="timer">—</span>
   </div>
   <div id="cargo" class="cargo">indexable.json</div>
+  <div id="attempt" class="attempt" hidden></div>
   <div id="stamps" class="stamps"></div>
 
   <h2 id="title">Raw communication lands</h2>
@@ -41,6 +42,7 @@
 </section>
 
 <nav id="controls">
+  <select id="scenario" title="Scenario"></select>
   <button id="restart" title="Restart">&#8635;</button>
   <button id="back" title="Previous stop">&#9664;</button>
   <button id="play" class="wide" title="Play / pause (space)">&#10074;&#10074; Pause</button>
@@ -55,6 +57,8 @@
   <div><i class="rail cdc"></i>Debezium CDC &mdash; an outbox row, not a direct publish</div>
   <div><i class="rail elastic"></i>Elasticsearch index</div>
   <div><i class="rail s3"></i>S3 object</div>
+  <div><i class="rail retry"></i>Retry topic &mdash; back to the same consumer</div>
+  <div><i class="rail dlt"></i>Dead letter topic &mdash; a dead end</div>
 </aside>
 
 <script src="data/flow.js"></script>

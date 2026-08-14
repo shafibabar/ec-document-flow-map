@@ -65,6 +65,21 @@ var Iso = (function () {
     cam.zoom = Math.max(cam.minZoom, Math.min(cam.maxZoom, Math.min(zx, zy)));
   }
 
+  /*
+   * A point on a loop that leaves a grid cell and returns to it, parameterised
+   * k = 0..1. At k = 0 and k = 1 it is exactly on the cell; at k = 0.5 it is a
+   * full diameter away. Used for anything that goes round and comes back to
+   * where it started — the engine animates along it and the renderer draws the
+   * curve from it, so the two cannot disagree.
+   */
+  var LOOP_R = 0.5;
+
+  function loopPoint(gx, gy, k, r) {
+    var R = r === undefined ? LOOP_R : r;
+    var ang = -Math.PI / 2 + Math.PI * 2 * k;
+    return { x: gx + Math.cos(ang) * R, y: gy + R + Math.sin(ang) * R };
+  }
+
   /** Trace a tile diamond centred on a grid cell. Caller strokes or fills. */
   function tilePath(ctx, gx, gy, canvas, inset) {
     var s = toScreen(gx, gy, canvas);
@@ -80,9 +95,9 @@ var Iso = (function () {
   }
 
   return {
-    TILE_W: TILE_W, TILE_H: TILE_H, cam: cam,
+    TILE_W: TILE_W, TILE_H: TILE_H, LOOP_R: LOOP_R, cam: cam,
     toWorld: toWorld, toScreen: toScreen,
     lookAt: lookAt, glideTo: glideTo, pan: pan, zoomBy: zoomBy,
-    frame: frame, tilePath: tilePath
+    frame: frame, tilePath: tilePath, loopPoint: loopPoint
   };
 })();

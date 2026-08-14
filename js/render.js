@@ -12,6 +12,8 @@
  *   cdc      dashed rail — the outbox pattern; nobody publishes it directly
  *   s3       thin spur to a depot
  *   elastic  thick spur into a yard
+ *   retry    a loop siding back into the same station, in warning red
+ *   dlt      a short dead end with a buffer stop; nothing leaves it
  */
 var Render = (function () {
 
@@ -27,7 +29,13 @@ var Render = (function () {
     text:     '#e6edf6',
     dim:      '#93a4bd',
     yard:     '#16324a',
-    depot:    '#26303f'
+    depot:    '#26303f',
+    // The failure family. Kept clearly apart from the amber "active" colour so
+    // that a hot retry rail never reads as an ordinary hop going well.
+    railDead:    '#6b3340',
+    railDeadHot: '#f87171',
+    siding:      '#3b1d24',
+    sidingEdge:  '#7f1d1d'
   };
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -66,24 +74,70 @@ var Render = (function () {
     });
   }
 
+  /*
+   * The loop siding a retry runs round. Traced by sampling Iso.loopPoint — the
+   * exact curve js/main.js animates the cart along — so the rail is guaranteed
+   * to be under the cart rather than approximately near it. Projecting each
+   * sample individually is also what keeps the circle correctly foreshortened
+   * into an isometric ellipse.
+   */
+  function loopPath(ctx, canvas, stop) {
+    var SEGMENTS = 48;
+    for (var i = 0; i <= SEGMENTS; i++) {
+      var pt = Iso.loopPoint(stop.grid.x, stop.grid.y, i / SEGMENTS);
+      var s = Iso.toScreen(pt.x, pt.y, canvas);
+      if (i === 0) { ctx.beginPath(); ctx.moveTo(s.x, s.y); }
+      else ctx.lineTo(s.x, s.y);
+    }
+  }
+
+  /** A buffer stop: the barrier at the end of a dead-end siding. */
+  function drawBufferStop(ctx, canvas, stop) {
+    var s = Iso.toScreen(stop.grid.x, stop.grid.y, canvas);
+    var z = Iso.cam.zoom;
+    ctx.save();
+    ctx.strokeStyle = C.sidingEdge;
+    ctx.lineWidth = 4 * z;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s.x - 22 * z, s.y - 10 * z);
+    ctx.lineTo(s.x + 22 * z, s.y - 10 * z);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawTrack(ctx, canvas, flow, track, active) {
     var a = stopById(flow, track.from), b = stopById(flow, track.to);
     if (!a || !b) return;
     var p = Iso.toScreen(a.grid.x, a.grid.y, canvas);
     var q = Iso.toScreen(b.grid.x, b.grid.y, canvas);
     var z = Iso.cam.zoom;
+    var dead = track.transport === 'retry' || track.transport === 'dlt';
 
     ctx.save();
     if (track.transport === 'cdc') {
       ctx.setLineDash([10 * z, 8 * z]);
     } else if (track.transport === 's3') {
       ctx.setLineDash([3 * z, 6 * z]);
+    } else if (track.transport === 'dlt') {
+      ctx.setLineDash([7 * z, 5 * z]);
     }
 
     ctx.lineCap = 'round';
-    ctx.strokeStyle = active ? C.railHot : C.rail;
+    ctx.strokeStyle = active ? (dead ? C.railDeadHot : C.railHot)
+                             : (dead ? C.railDead : C.rail);
     ctx.lineWidth = (track.transport === 'elastic' ? 7 : 5) * z;
     ctx.globalAlpha = active ? 1 : 0.55;
+
+    if (track.transport === 'retry') {
+      // from === to, so there is no line to draw between two points. The rail
+      // is the loop itself.
+      loopPath(ctx, canvas, a);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
     ctx.lineTo(q.x, q.y);
@@ -120,8 +174,14 @@ var Render = (function () {
     ctx.fillStyle = 'rgba(0,0,0,.45)';
     ctx.fill();
 
-    var body = stop.kind === 'yard' ? C.yard : (stop.kind === 'depot' ? C.depot : C.station);
-    if (state === 'current') body = '#243b53';
+    var body = stop.kind === 'yard' ? C.yard
+             : stop.kind === 'depot' ? C.depot
+             : stop.kind === 'siding' ? C.siding
+             : C.station;
+    // A siding keeps its warning colour even when the cart is standing on it —
+    // turning it the ordinary "current" blue would say the document arrived
+    // somewhere, and arriving in a DLT is not an arrival.
+    if (state === 'current' && stop.kind !== 'siding') body = '#243b53';
 
     // The building.
     ctx.save();
@@ -133,7 +193,8 @@ var Render = (function () {
     ctx.fill();
     ctx.restore();
 
-    ctx.strokeStyle = state === 'current' ? C.railHot
+    ctx.strokeStyle = stop.kind === 'siding' ? C.sidingEdge
+      : state === 'current' ? C.railHot
       : (state === 'visited' ? '#4b607d' : C.stationT);
     ctx.lineWidth = (state === 'current' ? 2.5 : 1.5) * z;
     roundRect(ctx, s.x - w / 2, s.y - lift - h, w, h, 7 * z);
@@ -145,6 +206,9 @@ var Render = (function () {
       roundRect(ctx, s.x - w / 2, s.y - lift - h, w, 8 * z, 4 * z);
       ctx.fill();
     }
+
+    // A siding gets the buffer stop that makes it read as a dead end.
+    if (stop.kind === 'siding') drawBufferStop(ctx, canvas, stop);
 
     ctx.textAlign = 'center';
     ctx.fillStyle = C.text;
@@ -229,6 +293,28 @@ var Render = (function () {
     ctx.fillStyle = C.text;
     ctx.textAlign = 'center';
     ctx.fillText(label, s.x, y - h - 16 * z);
+
+    /*
+     * The attempt counter, under the cart. It belongs on the cart rather than
+     * only in the panel because the retry ladder is the one part of this map
+     * where the same station is visited three times — without a counter on the
+     * thing that is moving, the second and third visits look like a rendering
+     * fault rather than the point.
+     */
+    if (opts && opts.badge) {
+      ctx.font = '600 ' + Math.max(8, 10.5 * z) + 'px ui-sans-serif, system-ui, sans-serif';
+      var bw = ctx.measureText(opts.badge).width + 14 * z;
+      var by = y + 12 * z;
+      roundRect(ctx, s.x - bw / 2, by, bw, 17 * z, 8.5 * z);
+      ctx.fillStyle = 'rgba(127,29,29,.92)';
+      ctx.fill();
+      ctx.strokeStyle = C.railDeadHot;
+      ctx.lineWidth = 1 * z;
+      roundRect(ctx, s.x - bw / 2, by, bw, 17 * z, 8.5 * z);
+      ctx.stroke();
+      ctx.fillStyle = '#fecaca';
+      ctx.fillText(opts.badge, s.x, by + 12 * z);
+    }
   }
 
   function draw(ctx, canvas, flow, state) {
@@ -251,7 +337,8 @@ var Render = (function () {
     });
 
     if (state.cart) {
-      drawCart(ctx, canvas, state.cart.gx, state.cart.gy, state.cart.cargo, { pulse: state.cart.pulse });
+      drawCart(ctx, canvas, state.cart.gx, state.cart.gy, state.cart.cargo,
+        { pulse: state.cart.pulse, badge: state.cart.badge });
     }
   }
 

@@ -46,6 +46,24 @@
       var from = stopById(prev.at);
       var k = Math.min(1, st.t / TRAVEL);
       var e = k < 0.5 ? 2 * k * k : -1 + (4 - 2 * k) * k;   // ease in/out
+
+      if (from === here) {
+        /*
+         * A retry arrives at the stop it just left, so the straight
+         * interpolation below would hold the cart perfectly still for the whole
+         * travel phase and the most important hop on the map would be
+         * invisible. Send it round the loop siding instead — Iso.loopPoint is
+         * the same curve render.js draws the rail from, so the cart and its
+         * track can never drift apart.
+         *
+         * Rounded at a constant rate, not eased: easing would make the cart
+         * hesitate at the top of the circle, which reads as arriving somewhere
+         * rather than going round again.
+         */
+        var pt = Iso.loopPoint(here.grid.x, here.grid.y, k);
+        return { gx: pt.x, gy: pt.y, cargo: prev.cargo, pulse: 0, retrying: true };
+      }
+
       return {
         gx: from.grid.x + (here.grid.x - from.grid.x) * e,
         gy: from.grid.y + (here.grid.y - from.grid.y) * e,
@@ -54,7 +72,12 @@
       };
     }
     var p = 0.5 + 0.5 * Math.sin(st.t / 260);
-    return { gx: here.grid.x, gy: here.grid.y, cargo: cur.cargo, pulse: p };
+    return { gx: here.grid.x, gy: here.grid.y, cargo: cur.cargo, pulse: p, badge: attemptBadge(cur) };
+  }
+
+  /** "attempt 2 of 3", or nothing at all on a step that is not a retry. */
+  function attemptBadge(s) {
+    return s.attempt ? 'attempt ' + s.attempt.n + ' of ' + s.attempt.of : '';
   }
 
   function activeTrack() {
@@ -80,9 +103,23 @@
   var elTimer = document.getElementById('timer');
   var elProgress = document.getElementById('progress');
   var elCount = document.getElementById('count');
+  var elAttempt = document.getElementById('attempt');
+  var elScenario = document.getElementById('scenarioName');
 
   function paintPanel() {
     var cur = step(st.idx);
+    elScenario.textContent = scenario.name;
+
+    // The attempt counter only exists on a retry ladder, so it is hidden rather
+    // than shown empty — an "attempt — of —" on the happy path would imply the
+    // happy path has attempts.
+    var badge = attemptBadge(cur);
+    elAttempt.textContent = badge;
+    elAttempt.hidden = !badge;
+    elAttempt.classList.toggle('spent', !!cur.attempt && cur.attempt.n === cur.attempt.of);
+
+    document.body.classList.toggle('failing', !!cur.failed);
+
     elTitle.textContent = cur.title;
     elNote.textContent = cur.note;
     elSrc.textContent = cur.src;
@@ -122,7 +159,16 @@
     }
 
     var cart = cartState();
-    if (st.follow) Iso.glideTo(cart.gx, cart.gy, 0.055);
+    if (st.follow) {
+      // Following the cart round a retry loop would swing the whole estate in a
+      // circle, which is unreadable. Hold on the station and let the cart orbit.
+      if (cart.retrying) {
+        var hold = stopById(step(st.idx).at);
+        Iso.glideTo(hold.grid.x, hold.grid.y, 0.055);
+      } else {
+        Iso.glideTo(cart.gx, cart.gy, 0.055);
+      }
+    }
 
     var cur2 = step(st.idx);
     var remain = st.phase === 'dwell'
@@ -149,6 +195,29 @@
     st.t = 0;
     paintPanel();
   }
+
+  /*
+   * The scenario picker. Built from the data rather than written out in the
+   * HTML, so adding a scenario stays a one-file edit in data/flow.js — the same
+   * rule that keeps adding a service a data edit.
+   */
+  var elPicker = document.getElementById('scenario');
+  flow.scenarios.forEach(function (sc, i) {
+    var o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = sc.name;
+    elPicker.appendChild(o);
+  });
+  elPicker.value = '0';
+  elPicker.onchange = function () {
+    scenario = flow.scenarios[Number(this.value)] || flow.scenarios[0];
+    // A scenario change is a full reset: a half-walked ladder left over from
+    // the previous scenario would put the cart on a stop the new one never
+    // visits.
+    st.idx = 0; st.phase = 'dwell'; st.t = 0;
+    paintPanel();
+    Iso.lookAt(stopById(step(0).at).grid.x, stopById(step(0).at).grid.y);
+  };
 
   document.getElementById('play').onclick = function () {
     st.paused = !st.paused;

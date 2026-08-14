@@ -17,6 +17,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 
   // kind: station (a K8s service) | yard (Elasticsearch) | depot (S3 / Mongo)
+  //     | siding (a dead-end topic — a DLT, where a document stops for good)
   var STOPS = [
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
     { id: 'gateway',    name: 'Gateway',             kind: 'station', tech: 'K8s',           grid: { x: 2, y: 3 } },
@@ -29,10 +30,22 @@
     { id: 'surveil',    name: 'surveil.av5',         kind: 'yard',    tech: 'Elasticsearch', grid: { x: 6, y: 6 },
       role: 'Clearance Terminal' },
     { id: 'review',     name: 'review.v1',           kind: 'yard',    tech: 'Elasticsearch', grid: { x: 8, y: 6 },
-      role: 'Violation Depot' }
+      role: 'Violation Depot' },
+
+    /*
+     * The Queue Qualifier dead letter topic. Its grid position is the one thing
+     * on this map that is a drawing decision rather than a document fact: it is
+     * a Kafka topic, so it has no place on the architecture image, and
+     * data/layout.js has no cell for it. (3,5) is free in that layout and hangs
+     * clear below the qualifier at (3,3), which is what a dead-end siding
+     * should look like. The topic itself is real; only where it sits is chosen.
+     */
+    { id: 'qualifier-dlt', name: '{topic}-dlt', kind: 'siding', tech: 'Kafka', grid: { x: 3, y: 5 },
+      role: 'Dead Letter Topic' }
   ];
 
   // transport: kafka (a track) | cdc (outbox -> Debezium -> a track) | s3 (an IO spur)
+  //          | retry (a loop siding back into the same station) | dlt (a dead end)
   var TRACKS = [
     { from: 'ea-s3',     to: 'gateway',   transport: 'kafka',
       topic: 'supBulkIndexingTopic_k8s' },
@@ -51,7 +64,22 @@
     { from: 'indexer',   to: 'surveil',   transport: 'elastic',
       topic: 'index -> surveil.av5' },
     { from: 'indexer',   to: 'review',    transport: 'elastic',
-      topic: 'index -> review.v1' }
+      topic: 'index -> review.v1' },
+
+    /*
+     * Retry and DLT, on Queue Qualifier's ingestion path. `from` and `to` are
+     * the same stop on purpose — a retry is a loop siding: the message goes
+     * back to the same consumer on the next -retry-N topic.
+     *
+     * The topic names really are written `{topic}-retry-0` in the source. The
+     * ingestion topic is injected per tenant at consumer bean creation and is
+     * not a static template in application.yaml, so the documents can only name
+     * the suffix. That is a real gap in the estate's own record, not a gap here.
+     */
+    { from: 'qualifier', to: 'qualifier',     transport: 'retry',
+      topic: '{topic}-retry-0 / {topic}-retry-1' },
+    { from: 'qualifier', to: 'qualifier-dlt', transport: 'dlt',
+      topic: '{topic}-dlt' }
   ];
 
   /*
@@ -123,5 +151,87 @@
     ]
   };
 
-  return { stops: STOPS, tracks: TRACKS, scenarios: [HAPPY] };
+  /*
+   * The retry walk. Same document, same first two hops, then it fails at Queue
+   * Qualifier and is carried through the full Spring Kafka retry ladder until
+   * the attempts run out and it rolls into the dead letter topic.
+   *
+   * Why the qualifier: it is the stop whose retry path the documents describe
+   * end to end — consumer method by consumer method, publisher class named, and
+   * a "Failure paths" section that states the route in one line. Other services
+   * retry too, but most of them only show it in a mermaid diagram.
+   *
+   * Why exhaustion rather than recovery: a document that recovers on retry-0
+   * ends up back on the happy path, which is already drawn. The version that
+   * runs out of attempts is the one that shows what the ladder is FOR, and it
+   * is the only way to put the DLT on screen. Recovery is worth adding later as
+   * a branch of this scenario.
+   *
+   * Three attempts total — the original delivery plus retry-0 plus retry-1 —
+   * because Events Consumed lists exactly those two retry topics and describes
+   * retry-1 as "Second/final retry; sends to DLT on failure".
+   */
+  var RETRY = {
+    id: 'retry',
+    name: 'Retry ladder — exhausted to DLT',
+    steps: [
+      { at: 'ea-s3', dwell: 2200,
+        title: 'Raw communication lands',
+        cargo: { label: 'indexable.json', tint: '#94a3b8', stamps: [] },
+        note: 'The same start as the happy path. A BulkIndexEvent pointing at a ' +
+              'document in the EA S3 bucket is published to supBulkIndexingTopic_k8s.',
+        src: 'Gateway/EVENT_FLOW_MAP.md · Events Consumed' },
+
+      { at: 'gateway', via: 'supBulkIndexingTopic_k8s', dwell: 3800,
+        title: 'Ingested and minified',
+        cargo: { label: 'miniIndexable.json', tint: '#38bdf8', stamps: ['minified', 'outboxed'] },
+        note: 'Gateway minifies the document and writes an IngestedCommunicationOutbox ' +
+              'row. Debezium publishes it. Nothing has gone wrong yet.',
+        src: 'Gateway/ec-gateway_stop_info.md · Transformation' },
+
+      { at: 'qualifier', via: 'outbox -> Debezium', dwell: 5000,
+        attempt: { n: 1, of: 3 }, failed: true,
+        title: 'First delivery fails',
+        cargo: { label: 'unprocessed message', tint: '#f87171', stamps: ['minified'] },
+        note: 'IngestedCommunicationConsumer.listen() takes the batch and hits a ' +
+              'recoverable processing error — the qualifier has to fetch the ' +
+              'communication document from S3 before it can extract participants, and ' +
+              'that is the fragile part. The message is not dropped and it is not ' +
+              'acknowledged as done: IngestedCommunicationRetryTopicManager republishes ' +
+              'it onto the first retry topic.',
+        src: 'Queue Qualifier/ec-queue-qualifier_stop_info.md · Failure paths' },
+
+      { at: 'qualifier', via: '{topic}-retry-0', dwell: 4600,
+        attempt: { n: 2, of: 3 },  failed: true,
+        title: 'Attempt 2 — first retry',
+        cargo: { label: 'unprocessed message', tint: '#f87171', stamps: ['minified', 'retried'] },
+        note: 'The message comes back to the same consumer class on a different topic ' +
+              'and a different method: firstRetry(). This is what the retry ladder ' +
+              'actually is — not a loop inside the service, but a round trip through ' +
+              'Kafka, which is why a retry survives the pod restarting. It fails again.',
+        src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Consumed #2' },
+
+      { at: 'qualifier', via: '{topic}-retry-1', dwell: 4800,
+        attempt: { n: 3, of: 3 }, failed: true,
+        title: 'Attempt 3 — final retry',
+        cargo: { label: 'unprocessed message', tint: '#dc2626', stamps: ['minified', 'retried', 'retried'] },
+        note: 'Last chance. secondRetry() is documented as the "second/final retry; ' +
+              'sends to DLT on failure" — there is no retry-2. When this one fails the ' +
+              'ladder is out of rungs and the message stops being retried at all.',
+        src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Consumed #3' },
+
+      { at: 'qualifier-dlt', via: '{topic}-dlt', dwell: 5200, terminal: true, failed: true,
+        title: 'Dead letter — the siding',
+        cargo: { label: 'dead letter', tint: '#7f1d1d', stamps: ['minified', 'retried', 'retried', 'dead'] },
+        note: 'The document is parked on the dead letter topic and travels no further. ' +
+              'Nothing downstream ever sees it: no qualification, no filtering, no ' +
+              'policy evaluation, no index entry. It is not lost — it is sitting on a ' +
+              'topic waiting for a human — but as far as the estate is concerned this ' +
+              'communication was never surveilled. Deserialization failures are put ' +
+              'here directly, without using the ladder at all.',
+        src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Published #6' }
+    ]
+  };
+
+  return { stops: STOPS, tracks: TRACKS, scenarios: [HAPPY, RETRY] };
 });
