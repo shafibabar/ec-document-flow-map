@@ -51,6 +51,30 @@
    *     | external (outside the estate)
    */
   var STOPS = [
+    /*
+     * The Archive. Set out at (-3,7) — three cells due left of EA-S3 on screen,
+     * and clear of the y = 4 main line, so it reads as somewhere the estate
+     * draws FROM rather than a stop on the estate's own journey.
+     *
+     * PROVENANCE, stated plainly because this is the one edge on the map that
+     * does not come from knowledge/:
+     *
+     *   The corpus does document an Archive, but only as Archive Elasticsearch
+     *   — Manual Run's remediation flow searches it through ArchiveSearchClient
+     *   and indexes into it via ea-indexing-gateway's /v1/index/sup-archive.
+     *   It does NOT document any Archive -> EA-S3 relationship, and the string
+     *   "EA-S3" does not appear anywhere in the documents at all; that name
+     *   reached this map from the architecture image.
+     *
+     *   The architecture image does place an Archive box far left of the main
+     *   pipeline row, which is where data/layout.js has it and is consistent
+     *   with this. The hop itself is asserted by the repo owner, and is sourced
+     *   to them below rather than to a file that does not say it. If a document
+     *   turns up that describes this hand-off, replace the src with it.
+     */
+    { id: 'archive',    name: 'Archive',             kind: 'archive', tech: 'external',      grid: { x: -3, y: 7 },
+      role: 'External system of record' },
+
     // --- the main line, y = 4, west to east ---------------------------------
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
     { id: 'gateway',    name: 'Gateway',             kind: 'station', tech: 'K8s',           grid: { x: 2, y: 4 } },
@@ -104,6 +128,19 @@
   // transport: kafka (a track) | cdc (outbox -> Debezium -> a track) | s3 (an IO spur)
   //          | retry (a loop siding back into the same station) | dlt (a dead end)
   var TRACKS = [
+    /*
+     * Archive -> EA-S3. A road, not a rail, and for the usual reason: no Kafka
+     * topic carries it. Boxes are stamped with metadata in the Archive's
+     * processing bay and carted over to the bucket, and the cart comes back
+     * empty for the next load — which is why this one runs continuously rather
+     * than only while the train is standing somewhere.
+     *
+     * Sourced to the repo owner. See the note on the archive stop above.
+     */
+    { from: 'archive',   to: 'ea-s3',     transport: 'road', shuttle: true,
+      topic: 'archived documents -> EA S3 bucket',
+      src: 'repo owner (not in knowledge/)' },
+
     { from: 'ea-s3',     to: 'gateway',   transport: 'kafka',
       topic: 'supBulkIndexingTopic_k8s' },
     { from: 'gateway',   to: 'ec-s3',     transport: 's3',

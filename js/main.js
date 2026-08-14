@@ -104,24 +104,39 @@
    * The carts only run during the dwell, which is what makes a stop look like
    * somewhere work happens rather than somewhere the train merely pauses.
    */
-  function roadCarts() {
-    if (st.phase !== 'dwell') return [];
-    var here = step(st.idx).at;
+  var ROAD_TRANSPORT = { s3: 1, mongo: 1, elastic: 1, road: 1 };
+
+  function roadCarts(now) {
+    var here = st.phase === 'dwell' ? step(st.idx).at : null;
     var tint = step(st.idx).cargo.tint;
     var out = [];
     flow.tracks.forEach(function (t) {
-      if (t.layer || t.from === t.to) return;
-      if (t.transport !== 's3' && t.transport !== 'mongo' && t.transport !== 'elastic') return;
-      if (t.from !== here && t.to !== here) return;
+      if (t.layer || t.from === t.to || !ROAD_TRANSPORT[t.transport]) return;
+
+      /*
+       * A shuttle runs whether or not the train is anywhere near — the Archive
+       * keeps stamping boxes and carting them to the bucket regardless of what
+       * the estate is doing with them. Every other road is worked only while
+       * the train is standing at one of its two ends.
+       */
+      if (!t.shuttle && t.from !== here && t.to !== here) return;
+
       var a = stopById(t.from), b = stopById(t.to);
       if (!a || !b) return;
-      // Out and back on a fixed cycle, so two carts on the same road stay in step.
-      var k = (st.t % 2800) / 2800;
-      var e = k < 0.5 ? k * 2 : (1 - k) * 2;
+
+      // Shuttles run on wall-clock time so they keep going through a pause;
+      // the rest run on the dwell clock so they stop when the story does.
+      var clock = t.shuttle ? now : st.t;
+      var k = (clock % 5200) / 5200;
+      var outbound = k < 0.5;
+      var e = outbound ? k * 2 : (1 - k) * 2;
       out.push({
         gx: a.grid.x + (b.grid.x - a.grid.x) * e,
         gy: a.grid.y + (b.grid.y - a.grid.y) * e,
-        tint: tint
+        tint: t.shuttle ? '#b08a4a' : tint,
+        // Loaded on the way out, empty on the way back. On the ordinary roads
+        // the cart is fetching as much as delivering, so it stays loaded.
+        loaded: t.shuttle ? outbound : true
       });
     });
     return out;
@@ -231,8 +246,9 @@
 
     Render.draw(ctx, canvas, flow, {
       dpr: st.dpr,
+      now: now,
       cart: cart,
-      carts: roadCarts(),
+      carts: roadCarts(now),
       activeTrack: activeTrack(),
       stopState: stopStateFor,
       hideLayers: st.hideLayers

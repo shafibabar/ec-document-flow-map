@@ -54,6 +54,7 @@ var Render = (function () {
            t.transport === 'retry' || t.transport === 'dlt';
   }
 
+
   // ------------------------------------------------------------------ ground
 
   /*
@@ -248,7 +249,8 @@ var Render = (function () {
 
   // --------------------------------------------------------------- buildings
 
-  function drawStop(ctx, canvas, stop, state, z) {
+  function drawStop(ctx, canvas, stop, state, z, t) {
+    if (stop.kind === 'archive') return Sprites.archive(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'station') return Sprites.station(ctx, canvas, stop, state, z);
     if (stop.kind === 'yard') return Sprites.depot(ctx, canvas, stop, state, z);
     if (stop.kind === 'siding') return Sprites.siding(ctx, canvas, stop, state, z);
@@ -361,12 +363,12 @@ var Render = (function () {
     }
     flow.stops.forEach(function (s) {
       drawables.push({ key: s.grid.x + s.grid.y, paint: function () {
-        drawStop(ctx, canvas, s, state.stopState(s.id), z);
+        drawStop(ctx, canvas, s, state.stopState(s.id), z, state.now);
       } });
     });
     (state.carts || []).forEach(function (c) {
       drawables.push({ key: c.gx + c.gy + 0.01, paint: function () {
-        Sprites.cart(ctx, canvas, c.gx, c.gy, c.tint, z);
+        Sprites.cart(ctx, canvas, c.gx, c.gy, c.tint, z, c.loaded);
       } });
     });
     if (state.cart) {

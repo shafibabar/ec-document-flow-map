@@ -129,6 +129,7 @@ body.failing .timer { color: #9c3524; }
 .rail.kafka { border-top-width: 4px; border-color: #8a8172; }
 .rail.cdc { border-top-style: dashed; border-color: #8a8172; }
 .rail.road { border-top-width: 5px; border-color: #a99c86; }
+.rail.owner { border-top-width: 5px; border-color: #b08a4a; }
 .rail.retry { border-color: #c0392b; }
 .rail.dlt { border-top-style: dashed; border-color: #8a4f4a; }
 .rail.terminus { border-top-style: dashed; border-color: #6b7280; }

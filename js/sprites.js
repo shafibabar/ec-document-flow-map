@@ -344,6 +344,122 @@ var Sprites = (function () {
     nameboard(ctx, top.x, top.y - 42 * z, stop.name, 'external', z);
   }
 
+  /*
+   * A point on one face of a solid, in the face's own coordinates: u runs 0..1
+   * left to right along the wall, v runs 0..1 from the ground to the eaves.
+   * Straight bilinear interpolation is exact here, because an isometric face is
+   * a parallelogram with no perspective in it.
+   */
+  function facePoint(bl, br, tl, tr, u, v) {
+    var bx = bl.x + (br.x - bl.x) * u, by = bl.y + (br.y - bl.y) * u;
+    var tx = tl.x + (tr.x - tl.x) * u, ty = tl.y + (tr.y - tl.y) * u;
+    return { x: bx + (tx - bx) * v, y: by + (ty - by) * v };
+  }
+
+  function faceQuad(ctx, f, u0, u1, v0, v1, fill) {
+    var p = [f(u0, v0), f(u1, v0), f(u1, v1), f(u0, v1)];
+    I.poly(ctx, p, fill);
+    return p;
+  }
+
+  /*
+   * The Archive. An external system, and it should look like one: bigger and
+   * older than anything the estate runs, set well apart, with its own loading
+   * yard rather than a platform. Nothing arrives here by rail.
+   *
+   * Three things carry its character, all on the wall facing the road:
+   *   - an oversized ARCHIVE plaque, the kind bolted to a building that has
+   *     been there longer than the software
+   *   - a long glass window with high-density shelving racked behind it
+   *   - an open cutaway bay where boxes are stamped with metadata before they
+   *     go out, which is the part that actually animates
+   */
+  function archive(ctx, canvas, stop, state, z, t) {
+    var gx = stop.grid.x, gy = stop.grid.y;
+    var wall = '#d9cdb6', trim = '#7d6a52';
+
+    // Loading yard, offset toward the road — the direction EA-S3 lies in.
+    I.box(ctx, canvas, gx + 0.62, gy - 0.62, 0.42, 0.42, 3, '#9c917f');
+
+    I.box(ctx, canvas, gx, gy, 0.60, 0.50, 4, PALETTE.stone);        // plinth
+    I.box(ctx, canvas, gx, gy, 0.54, 0.44, 40, wall, 4);             // main hall
+    I.roof(ctx, canvas, gx, gy, 0.60, 0.50, 44, 14, '#6a5a4a');
+
+    // The road-facing wall, as a face to draw on: south corner to east corner.
+    var c = I.corners(gx, gy, 0.54, 0.44, canvas);
+    var bl = I.up(c.s, 4), br = I.up(c.e, 4);
+    var tl = I.up(c.s, 44), tr = I.up(c.e, 44);
+    var f = function (u, v) { return facePoint(bl, br, tl, tr, u, v); };
+
+    // --- the window, with high-density shelving behind it --------------------
+    faceQuad(ctx, f, 0.08, 0.62, 0.30, 0.72, '#2c3a44');             // glass
+    ctx.save();
+    var glass = faceQuad(ctx, f, 0.08, 0.62, 0.30, 0.72, null);
+    ctx.clip();
+    for (var i = 0; i < 9; i++) {                                    // rack uprights
+      var u = 0.10 + i * 0.058;
+      I.poly(ctx, [f(u, 0.31), f(u + 0.022, 0.31), f(u + 0.022, 0.71), f(u, 0.71)],
+             i % 2 ? '#8f8878' : '#7d776a');
+    }
+    for (i = 0; i < 4; i++) {                                        // shelf decks
+      var v = 0.34 + i * 0.10;
+      I.poly(ctx, [f(0.08, v), f(0.62, v), f(0.62, v + 0.016), f(0.08, v + 0.016)],
+             'rgba(220,210,190,.45)');
+    }
+    ctx.restore();
+    ctx.strokeStyle = trim;                                          // window frame
+    ctx.lineWidth = Math.max(0.6, 1.4 * z);
+    I.poly(ctx, glass);
+    ctx.stroke();
+
+    // --- the oversized plaque ------------------------------------------------
+    var plaque = faceQuad(ctx, f, 0.10, 0.60, 0.78, 0.96, '#efe7d3');
+    ctx.strokeStyle = trim;
+    ctx.lineWidth = Math.max(0.8, 2 * z);
+    I.poly(ctx, plaque);
+    ctx.stroke();
+    var pc = f(0.35, 0.87);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#4a3f30';
+    ctx.font = '800 ' + Math.max(8, 15 * z) + 'px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText('ARCHIVE', pc.x, pc.y + 5 * z);
+
+    // --- the cutaway processing bay ------------------------------------------
+    // Open front, a bench, boxes, and a stamp that comes down on the beat.
+    faceQuad(ctx, f, 0.68, 0.96, 0.02, 0.46, '#20282e');             // the recess
+    I.poly(ctx, [f(0.68, 0.16), f(0.96, 0.16), f(0.96, 0.19), f(0.68, 0.19)], '#6b5a45');
+
+    var beat = ((t || 0) % 1400) / 1400;                             // one press
+    var press = beat < 0.34 ? Math.sin(beat / 0.34 * Math.PI) : 0;
+
+    for (i = 0; i < 3; i++) {
+      var bu = 0.73 + i * 0.08;
+      var stamped = i < (beat < 0.5 ? 1 : 2);                        // they accrue
+      I.poly(ctx, [f(bu, 0.19), f(bu + 0.055, 0.19), f(bu + 0.055, 0.30), f(bu, 0.30)],
+             stamped ? '#c2a06a' : '#a8916f');
+      if (stamped) {
+        I.poly(ctx, [f(bu + 0.012, 0.24), f(bu + 0.043, 0.24),
+                     f(bu + 0.043, 0.265), f(bu + 0.012, 0.265)], '#e8dcc0');
+      }
+    }
+    // The stamp head, over the middle box.
+    var sv = 0.42 - press * 0.10;
+    I.poly(ctx, [f(0.805, sv), f(0.855, sv), f(0.855, sv + 0.07), f(0.805, sv + 0.07)],
+           '#5c6672');
+    var arm = f(0.83, sv + 0.07);
+    ctx.strokeStyle = '#5c6672';
+    ctx.lineWidth = Math.max(0.7, 1.6 * z);
+    ctx.beginPath();
+    ctx.moveTo(arm.x, arm.y);
+    ctx.lineTo(arm.x, arm.y - 11 * z);
+    ctx.stroke();
+
+    if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.78, '#f0a132', z);
+
+    var top = I.up(I.toScreen(gx, gy, canvas), 4);
+    nameboard(ctx, top.x, top.y - 72 * z, stop.name, stop.role || 'external', z);
+  }
+
   /** A soft ring on the ground marking the stop the document is at now. */
   function haloRing(ctx, canvas, gx, gy, r, colour, z) {
     var c = I.toScreen(gx, gy, canvas);
@@ -444,16 +560,32 @@ var Sprites = (function () {
    * it while the train is standing — the last few metres a document travels are
    * by road, not by rail.
    */
-  function cart(ctx, canvas, gx, gy, tint, z) {
+  function cart(ctx, canvas, gx, gy, tint, z, loaded) {
     var c = I.toScreen(gx, gy, canvas);
     shadowBlob(ctx, c.x, c.y, 10 * z, 4 * z);
-    var w = 15 * z, h = 9 * z, y0 = c.y - 3 * z;
-    roundRect(ctx, c.x - w / 2, y0 - h, w, h, 1.6 * z);
-    ctx.fillStyle = tint || '#c9a227'; ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,.3)';
-    ctx.lineWidth = Math.max(0.4, 0.8 * z);
-    roundRect(ctx, c.x - w / 2, y0 - h, w, h, 1.6 * z);
-    ctx.stroke();
+    var w = 15 * z, y0 = c.y - 3 * z;
+
+    // A flat bed rather than a solid block, so "carrying something" and
+    // "coming back empty" are actually different silhouettes.
+    var bed = 4.5 * z;
+    roundRect(ctx, c.x - w / 2, y0 - bed, w, bed, 1.2 * z);
+    ctx.fillStyle = '#8a7a5e'; ctx.fill();
+
+    if (loaded !== false) {
+      var h = 8 * z;
+      roundRect(ctx, c.x - w * 0.38, y0 - bed - h, w * 0.76, h, 1.4 * z);
+      ctx.fillStyle = tint || '#c9a227'; ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.3)';
+      ctx.lineWidth = Math.max(0.4, 0.8 * z);
+      roundRect(ctx, c.x - w * 0.38, y0 - bed - h, w * 0.76, h, 1.4 * z);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,.35)';   // strapping
+      ctx.beginPath();
+      ctx.moveTo(c.x, y0 - bed - h);
+      ctx.lineTo(c.x, y0 - bed);
+      ctx.stroke();
+    }
+
     ctx.fillStyle = '#2a2f36';
     [-0.28, 0.28].forEach(function (f) {
       ctx.beginPath();
@@ -496,7 +628,7 @@ var Sprites = (function () {
   return {
     PALETTE: PALETTE, identity: identity, assign: assign, hash: hash,
     station: station, warehouse: warehouse, depot: depot, vault: vault,
-    siding: siding, terminus: terminus, external: external,
+    siding: siding, terminus: terminus, external: external, archive: archive,
     train: train, cart: cart, tree: tree,
     nameboard: nameboard, roundRect: roundRect, shadowBlob: shadowBlob
   };
