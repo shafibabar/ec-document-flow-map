@@ -1,25 +1,63 @@
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>EC Document Flow Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EC Document Flow Map — Railway</title>
 <link rel="stylesheet" href="css/map.css">
 
 <!--
-  Entry point. Opens directly from the filesystem: no build step, no bundler,
-  no dependencies, no network calls.
+  Opens straight from the filesystem. No build step, no dependencies, no
+  network calls — plain script tags, canvas and vanilla JS.
 
-  Load order matters. The model is data and loads first; every module below it
-  reads from the model and never hardcodes a service, topic or event name.
+  Load order: data first, then projection, then rendering, then the engine.
 -->
 
 <canvas id="map"></canvas>
-<div id="ui"><!-- scenario picker, layer control, transport controls --></div>
 
-<script src="data/model.js"></script>
+<header id="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <div>
+      <h1>Enterprise Conduct — document flow</h1>
+      <p id="scenarioName">Happy path · bulk indexing</p>
+    </div>
+  </div>
+  <div id="count" class="count">1 / 7</div>
+</header>
+
+<div id="progressTrack"><div id="progress"></div></div>
+
+<section id="panel">
+  <div class="row">
+    <span class="eyebrow">Now carrying</span>
+    <span id="timer" class="timer">—</span>
+  </div>
+  <div id="cargo" class="cargo">indexable.json</div>
+  <div id="stamps" class="stamps"></div>
+
+  <h2 id="title">Raw communication lands</h2>
+  <p id="note"></p>
+
+  <div class="meta"><span class="eyebrow">Arrived via</span><code id="via">—</code></div>
+  <div class="meta"><span class="eyebrow">Source</span><span id="src" class="src"></span></div>
+</section>
+
+<nav id="controls">
+  <button id="restart" title="Restart">&#8635;</button>
+  <button id="back" title="Previous stop">&#9664;</button>
+  <button id="play" class="wide" title="Play / pause (space)">&#10074;&#10074; Pause</button>
+  <button id="fwd" title="Next stop">&#9654;</button>
+  <button id="speed" title="Speed">1&times;</button>
+  <button id="followBtn" class="on" title="Follow the cart">&#9673; Following</button>
+  <button id="fit" title="Fit the whole estate">&#10530;</button>
+</nav>
+
+<aside id="legend">
+  <div><i class="rail kafka"></i>Kafka topic</div>
+  <div><i class="rail cdc"></i>Debezium CDC &mdash; an outbox row, not a direct publish</div>
+  <div><i class="rail elastic"></i>Elasticsearch index</div>
+  <div><i class="rail s3"></i>S3 object</div>
+</aside>
+
+<script src="data/flow.js"></script>
 <script src="js/iso.js"></script>
-<script src="js/graph.js"></script>
-<script src="js/router.js"></script>
-<script src="js/envelope.js"></script>
 <script src="js/render.js"></script>
-<script src="js/layers.js"></script>
-<script src="js/controls.js"></script>
 <script src="js/main.js"></script>
