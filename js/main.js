@@ -106,6 +106,12 @@
    */
   var ROAD_TRANSPORT = { s3: 1, mongo: 1, elastic: 1, road: 1 };
 
+  /** Ease in and out — the same curve the train uses between stations. */
+  function ease(u) {
+    var k = Math.max(0, Math.min(1, u));
+    return k < 0.5 ? 2 * k * k : -1 + (4 - 2 * k) * k;
+  }
+
   function roadCarts(now) {
     var here = st.phase === 'dwell' ? step(st.idx).at : null;
     var tint = step(st.idx).cargo.tint;
@@ -124,19 +130,50 @@
       var a = stopById(t.from), b = stopById(t.to);
       if (!a || !b) return;
 
+      /*
+       * Stop at the dock, not at the middle of the building.
+       *
+       * A cart that runs all the way to a stop's own cell ends up inside that
+       * building's footprint, and there is nothing the depth sort can do about
+       * it: on a road along dx = -dy every point has the same gx + gy, so cart
+       * and building tie, and the cart wins the tie and drives over the roof.
+       * Holding it a fixed distance clear of both ends fixes it properly — the
+       * cart pulls up at the loading dock, which is where a cart belongs.
+       */
+      var dx = b.grid.x - a.grid.x, dy = b.grid.y - a.grid.y;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var pad = Math.min(0.42, (t.dock === undefined ? 0.8 : t.dock) / len);
+
       // Shuttles run on wall-clock time so they keep going through a pause;
       // the rest run on the dwell clock so they stop when the story does.
       var clock = t.shuttle ? now : st.t;
-      var k = (clock % 5200) / 5200;
-      var outbound = k < 0.5;
-      var e = outbound ? k * 2 : (1 - k) * 2;
+      var run, loaded;
+
+      if (t.shuttle) {
+        /*
+         * A real delivery round rather than a ping-pong: accelerate out, stand
+         * at the bucket long enough to unload, accelerate back, stand at the
+         * dock long enough to load again. The previous version reversed
+         * instantly at each end, which is what made it look mechanical.
+         */
+        var cy = (clock % 7000) / 7000;
+        if (cy < 0.40)      { run = ease(cy / 0.40); }
+        else if (cy < 0.50) { run = 1; }                       // unloading
+        else if (cy < 0.90) { run = 1 - ease((cy - 0.50) / 0.40); }
+        else                { run = 0; }                       // loading
+        loaded = cy < 0.45 || cy >= 0.95;
+      } else {
+        var k = (clock % 5200) / 5200;
+        run = ease(k < 0.5 ? k * 2 : (1 - k) * 2);
+        loaded = true;      // on the ordinary roads a cart fetches as well as delivers
+      }
+
+      var e = pad + run * (1 - pad * 2);
       out.push({
-        gx: a.grid.x + (b.grid.x - a.grid.x) * e,
-        gy: a.grid.y + (b.grid.y - a.grid.y) * e,
+        gx: a.grid.x + dx * e,
+        gy: a.grid.y + dy * e,
         tint: t.shuttle ? '#b08a4a' : tint,
-        // Loaded on the way out, empty on the way back. On the ordinary roads
-        // the cart is fetching as much as delivering, so it stays loaded.
-        loaded: t.shuttle ? outbound : true
+        loaded: loaded
       });
     });
     return out;
