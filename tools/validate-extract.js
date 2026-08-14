@@ -347,7 +347,21 @@ function resolveSlug(bare) {
  */
 function checkNodeId(file, where, entry) {
   const { id, kind, name } = entry;
-  if (typeof id !== 'string' || typeof kind !== 'string') return; // already diagnosed
+  // A non-string `kind` really is already diagnosed — kind is in ENUMS. A
+  // non-string `id` was not: REQUIRED only tests `entry.id === undefined`, so
+  // `id: 12345` is present, is not an enum, and this early return then skipped
+  // the whole node-id contract in silence. `_example.js` with a numeric id on
+  // nodes[0] printed "ok — 1 extract(s) conform" and exited 0.
+  //
+  // That is the merge key. Issue #4 spent three review cycles on it and #22
+  // exists to protect it across extracts; review cycle 2 of #5 cited this guard
+  // as the one validate-layout.js should have copied. It guarded the crash, not
+  // the defect.
+  if (typeof id !== 'string' || !id.trim()) {
+    return fail(file, `${where}.id`, `must be a non-empty string, got ${JSON.stringify(id)}. ` +
+      'The id is the merge key Parent 2 joins on, so it is checked before anything else.');
+  }
+  if (typeof kind !== 'string') return; // already diagnosed — kind is an enum
   const prefix = ID_PREFIX[kind];
 
   if (kind === 'service') {
@@ -697,10 +711,17 @@ function checkFile(file) {
  * of files whose job is to prevent it. One list, imported, is the only version
  * of this that is actually true.
  *
+ * `isPlaceholder` travels with them for the same reason. Both files check the
+ * same `source` object against the same rule — "provenance that names nothing is
+ * worse than none, because it looks checked" — and review cycle 3 of #5 found
+ * validate-layout.js was not checking it at all: `{ file: 1, heading: 2 }` and
+ * `{ file: '   ', heading: '  ' }` both validated clean there while both fail
+ * here. One placeholder list, imported, rather than a second one to keep in step.
+ *
  * The CLI below is behind `require.main === module` so that importing these
  * runs nothing.
  */
-module.exports = { SERVICE_IDS, STORE_NODE_IDS, EXTERNAL_NODE_IDS };
+module.exports = { SERVICE_IDS, STORE_NODE_IDS, EXTERNAL_NODE_IDS, isPlaceholder };
 
 if (require.main === module) {
   const files = process.argv.slice(2);

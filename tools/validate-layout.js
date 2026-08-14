@@ -56,7 +56,26 @@ const path = require('node:path');
  * left this validator printing "ok" and all fifty tests green. Importing is the
  * fix: one list, rather than two that are asserted to agree.
  */
-const { SERVICE_IDS, STORE_NODE_IDS, EXTERNAL_NODE_IDS } = require('./validate-extract.js');
+const { SERVICE_IDS, STORE_NODE_IDS, EXTERNAL_NODE_IDS, isPlaceholder } =
+  require('./validate-extract.js');
+
+/**
+ * Interpolating a value into the message that reports it invalid is how a
+ * validator crashes instead of diagnosing. `kind`, `group` and `generation` are
+ * quoted back verbatim, and a Symbol or a null-prototype object throws on
+ * coercion — an uncaught TypeError that printed no diagnostic for any of the 21
+ * nodes and exited 1, indistinguishable from a clean rejection. Same class as
+ * the non-string `id` review cycle 2 of #5 found, in the paths that fix did not
+ * cover.
+ */
+function show(v) {
+  if (typeof v === 'symbol') return v.toString();
+  try {
+    return String(v);
+  } catch {
+    return Object.prototype.toString.call(v);
+  }
+}
 
 /**
  * The image's own dimensions, from data/layout.js's header. `px` is stated
@@ -173,7 +192,7 @@ function checkFile(file) {
     const prefix = Object.keys(KIND_FOR_PREFIX).find((p) => n.id.startsWith(p));
     const impliedKind = prefix ? KIND_FOR_PREFIX[prefix] : 'service';
     if (n.kind !== undefined && KINDS.includes(n.kind) && n.kind !== impliedKind) {
-      fail(`${at}.kind`, `"${n.kind}" contradicts the id. ` + (prefix
+      fail(`${at}.kind`, `"${show(n.kind)}" contradicts the id. ` + (prefix
         ? `An id beginning "${prefix}" is ${impliedKind === 'external' ? 'an' : 'a'} ${impliedKind} node.`
         : 'A bare slug with no prefix is a service node; a store id begins "store:" ' +
           'and an integrated system\'s begins "external:".'));
@@ -206,21 +225,21 @@ function checkFile(file) {
       fail(`${at}.kind`, `is required. Allowed: ${KINDS.join(', ')}. Without it the ` +
         'canonical-service-slug check cannot run, so a wrong id passes unnamed.');
     } else if (!KINDS.includes(n.kind)) {
-      fail(`${at}.kind`, `"${n.kind}" is not valid. Allowed: ${KINDS.join(', ')}`);
+      fail(`${at}.kind`, `"${show(n.kind)}" is not valid. Allowed: ${KINDS.join(', ')}`);
     }
     if (n.group === undefined) {
       fail(`${at}.group`, `is required. Allowed: ${GROUPS.join(', ')}. Use "none" for a ` +
         'component drawn outside every sub-domain frame — "drawn outside every frame" ' +
         'and "could not be placed" are different facts and get different values.');
     } else if (!GROUPS.includes(n.group)) {
-      fail(`${at}.group`, `"${n.group}" is not valid. Allowed: ${GROUPS.join(', ')}. ` +
+      fail(`${at}.group`, `"${show(n.group)}" is not valid. Allowed: ${GROUPS.join(', ')}. ` +
         'Use the frame label alone — "Search", not "Search Sub-domain".');
     }
     if (n.generation === undefined) {
       fail(`${at}.generation`, `is required. Allowed: ${GENERATIONS.join(', ')}.`);
     } else if (!GENERATIONS.includes(n.generation)) {
-      fail(`${at}.generation`, `"${n.generation}" is not valid. Allowed: ${GENERATIONS.join(', ')}. ` +
-        (String(n.generation) === '2.0'
+      fail(`${at}.generation`, `"${show(n.generation)}" is not valid. Allowed: ${GENERATIONS.join(', ')}. ` +
+        (show(n.generation) === '2.0'
           ? '2.0 components are out of scope entirely and must not be placed.'
           : 'Note 3.0 must be a quoted string; unquoted 3.0 is the number 3.'));
     }
@@ -241,11 +260,28 @@ function checkFile(file) {
     }
 
     // Provenance: read from the image, or inferred with a stated basis.
+    //
+    // Typed the way tools/validate-extract.js types the identical `source`
+    // object, because until review cycle 3 of #5 this file did not type it at
+    // all — only truthiness. `{ file: 1, heading: 2 }` and
+    // `{ file: '   ', heading: '  ' }` both validated clean here while both fail
+    // there, and a `reason` of `123456789012345678901234` counted as a stated
+    // basis because the test was `String(reason).trim().length >= 20`.
+    // Provenance is the whole justification for these 21 coordinates; a `file`
+    // that is the number 1 cites nothing.
     const s = n.source;
-    if (!s || typeof s !== 'object') {
+    const str = (v) => typeof v === 'string' && v.trim() !== '';
+    if (!s || typeof s !== 'object' || Array.isArray(s)) {
       fail(`${at}.source`, 'missing — every node must cite the image or state its inference');
+    } else if (s.inferred !== undefined && typeof s.inferred !== 'boolean') {
+      // `s.inferred === true` is strict, so any other truthy value fell through
+      // to the drawn branch: a node asserting `inferred: 'yes'` was read as
+      // having been measured off the image, which is the opposite of what it says.
+      fail(`${at}.source`, `inferred must be true or false, got ${JSON.stringify(s.inferred)}. ` +
+        'Only the boolean true marks an inferred position; anything else is read as drawn, ' +
+        'which is the opposite of what the entry claims.');
     } else if (s.inferred === true) {
-      if (!s.reason || String(s.reason).trim().length < 20) {
+      if (!str(s.reason) || s.reason.trim().length < 20 || isPlaceholder(s.reason)) {
         fail(`${at}.source`, 'is inferred but gives no usable reason. ' +
           'An inference without a stated basis is a guess wearing a badge.');
       }
@@ -263,8 +299,12 @@ function checkFile(file) {
           'and this node is not drawn on it; the position is carried by source.reason.');
       }
     } else {
-      if (!s.file || !s.heading) {
-        fail(`${at}.source`, 'must name the image file and the region it was read from');
+      if (!str(s.file) || !str(s.heading)) {
+        fail(`${at}.source`, 'must name the image file and the region it was read from, ' +
+          'both as non-empty strings');
+      } else if (isPlaceholder(s.file) || isPlaceholder(s.heading)) {
+        fail(`${at}.source`, 'names a placeholder rather than a real file and region. ' +
+          'Provenance that names nothing is worse than none: it looks checked.');
       }
       if (NOT_ON_IMAGE.includes(n.id)) {
         fail(`${at}.source`, 'cites the image, but this node is NOT drawn on it. ' +
@@ -306,6 +346,49 @@ function checkFile(file) {
         `${needCols}x${needRows}. The declared size is what a renderer sizes its board ` +
         'from, so it must be max+1 on each axis, not an approximation.');
     }
+
+    /*
+     * The ranks must be dense — 0..max with every value used.
+     *
+     * A ranking produced by clustering and numbering has no holes in it by
+     * construction: cluster indices run 0, 1, 2 … with none skipped. Nothing
+     * checked that, and review cycle 1 of #5 tied the coordinates to the
+     * declaration without tying the declaration to anything, so the board could
+     * grow without limit as long as the two agreed. Both drivers validated
+     * clean: `echo-engine` at x=40 and `conduct-audit-service` at x=41 with
+     * `columns: 42`, leaving 27 empty columns in a "ranking"; and
+     * `grid.x = 2**31` with `columns: 2**31 + 1`, a two-billion-column canvas.
+     *
+     * Density closes both at once — 21 nodes cannot span 2^31 consecutive
+     * ranks — and it does it without re-introducing the 260px tolerance into
+     * the gate, because any clustering at any tolerance produces consecutive
+     * indices.
+     */
+    for (const axis of ['x', 'y']) {
+      const used = new Set(placed.map((n) => n.grid[axis]));
+      const max = Math.max(...used);
+      // Dense iff every value in 0..max is occupied, which for a set of
+      // distinct non-negative integers is just a size comparison. Tested that
+      // way rather than by enumerating the range, because `max` is attacker-
+      // controlled: the first cut of this check listed every gap, and a driver
+      // placing a node at grid.x = 2**31 turned the diagnostic into a
+      // two-billion-element join — a RangeError instead of a report, which is
+      // the very failure class this cycle is here to remove. The sample below
+      // is bounded and terminates within `used.size` steps of the first hole,
+      // since at most `used.size` values can be occupied.
+      if (used.size !== max + 1) {
+        const gaps = [];
+        for (let i = 0; i <= max && gaps.length < 12; i++) if (!used.has(i)) gaps.push(i);
+        const missing = max + 1 - used.size;
+        const word = axis === 'x' ? 'column' : 'row';
+        fail(`${tag}: grid.${axis}`, `leaves ${missing} ${word}${missing > 1 ? 's' : ''} empty ` +
+          `(${gaps.join(', ')}${missing > gaps.length ? ', …' : ''}) while placing a node at ` +
+          `${axis}=${max}. The grid is a RANKING of the detected centres — clustering and ` +
+          `numbering cannot skip an index — so the occupied ${word}s must be 0..${max} with no ` +
+          'holes. A gap means either a node is missing or a rank was written by hand rather ' +
+          'than derived.');
+      }
+    }
   }
 
   /*
@@ -328,26 +411,57 @@ function checkFile(file) {
    * a gate. Cycle 1 drew that exact distinction itself for the two inferred
    * positions and then left nineteen resting on a comment.
    *
-   * What is enforced is monotonicity and nothing more: sorted by px, the ranks
-   * must not decrease. That forbids every inversion and permits every tie, so
-   * it does not re-run the clustering at a hardcoded 260 — a re-measured px or
-   * a different tolerance anywhere in the collision-free 200-270 band still
-   * passes, and only a genuine reordering fails.
+   * What is enforced is that the grid is a ranking *function* of the centres,
+   * and nothing more: sorted by px the ranks must not decrease, and two nodes
+   * sharing a centre must share a rank. That forbids every inversion and
+   * permits every tie between *distinct* centres, so it does not re-run the
+   * clustering at a hardcoded 260 — a re-measured px or a different tolerance
+   * anywhere in the collision-free 200-270 band still passes, and only a
+   * genuine reordering fails.
    */
   for (const axis of ['x', 'y']) {
     const measured = data.nodes.filter((n) => n && n.px && n.grid &&
       Number.isInteger(n.px[axis]) && Number.isInteger(n.grid[axis]));
+
+    /*
+     * Equal centres, equal ranks — checked by grouping, not by the sorted walk.
+     *
+     * The walk below compares adjacent pairs, which is complete for the
+     * crossing case and, for ties, reduces to whatever order the nodes happen
+     * to sit in data/layout.js's array: `Array.prototype.sort` is stable, so a
+     * tied pair is presented in file order and only fails if the higher rank
+     * comes first. Review cycle 3 of #5 proved it with two drivers that differ
+     * in nothing but array order — `store:EC-S3` moved to grid.x 3 while
+     * `gateway` keeps 2, both at px.x 1250, is accepted as written and rejected
+     * with the two entries swapped. Three real pairs share a centre today
+     * (gateway/store:EC-S3 at x=1250, cognition-analytics/policy-evaluator at
+     * x=2934, review-service/reporting at y=3678), so half the rule was
+     * unenforceable on live nodes while the diagnostic stated it in full.
+     */
+    const byPx = new Map();
+    for (const n of measured) {
+      if (!byPx.has(n.px[axis])) byPx.set(n.px[axis], []);
+      byPx.get(n.px[axis]).push(n);
+    }
+    for (const [value, group] of byPx) {
+      const ranks = [...new Set(group.map((n) => n.grid[axis]))];
+      if (ranks.length > 1) {
+        const names = group.map((n) => `${n.id} (grid.${axis} ${n.grid[axis]})`).join(', ');
+        fail(`${tag}: ${group[0].id}`, `and ${group.length - 1} other node(s) share px.${axis} ` +
+          `${value} but rank differently: ${names}. Equal centres must get equal ranks — ` +
+          'the grid is a ranking of the centres, and one centre cannot hold two ranks.');
+      }
+    }
+
     const sorted = [...measured].sort((a, b) => a.px[axis] - b.px[axis]);
     for (let i = 1; i < sorted.length; i++) {
       const lo = sorted[i - 1];
       const hi = sorted[i];
+      if (hi.px[axis] === lo.px[axis]) continue; // ties handled by the grouping above
       if (hi.grid[axis] < lo.grid[axis]) {
         const side = axis === 'x' ? 'left of' : 'above';
-        const tied = hi.px[axis] === lo.px[axis];
-        fail(`${tag}: ${hi.id}`, tied
-          ? `and ${lo.id} share px.${axis} ${hi.px[axis]} but rank differently: grid.${axis} ` +
-            `${hi.grid[axis]} vs ${lo.grid[axis]}. Equal centres must get equal ranks.`
-          : `is ${side} ${lo.id} on the grid but not on the image. px.${axis} ` +
+        fail(`${tag}: ${hi.id}`,
+          `is ${side} ${lo.id} on the grid but not on the image. px.${axis} ` +
             `${hi.px[axis]} > ${lo.px[axis]}, yet grid.${axis} ${hi.grid[axis]} < ` +
             `${lo.grid[axis]}. The grid is a ranking of the detected centres, so ranks may ` +
             'tie but must never cross — that is the whole of what "relative positions are ' +

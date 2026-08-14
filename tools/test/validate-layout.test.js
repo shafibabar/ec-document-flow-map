@@ -270,6 +270,87 @@ test('a non-string id is diagnosed, not dereferenced', () => {
   assert.match(r.diag, /nodes\[\d+\]: id must be a non-empty string, got 12345/);
 });
 
+test('two nodes sharing a detected centre must share a rank', () => {
+  // The other half of the rank check, and the half array order decided. The
+  // walk added in review cycle 2 compares adjacent pairs of a stable sort, so a
+  // tied pair is presented in the order data/layout.js writes them and only
+  // fails when the higher rank comes first. store:EC-S3 given column 3 while
+  // gateway keeps 2 — both at px.x 1250 — was accepted as written and rejected
+  // with the two array entries swapped: the same layout, opposite verdicts.
+  // Three pairs share a centre in the real file, so half the rule the
+  // diagnostic states was unenforceable on live nodes.
+  const r = run(path.join(FIXTURES, 'layout-px-tie-split.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag,
+    /gateway: and 1 other node\(s\) share px\.x 1250 but rank differently/);
+  assert.match(r.diag, /gateway \(grid\.x 2\), store:EC-S3 \(grid\.x 3\)/,
+    'naming both nodes and both ranks');
+});
+
+test('the ranks must be dense — no empty column or row', () => {
+  // Cycle 1 made the coordinates answer to the declared board and left the
+  // declared board answering to nothing, so it could grow without limit as long
+  // as the two agreed: grid.x = 2**31 with columns 2**31+1 validated clean. A
+  // ranking produced by clustering and numbering cannot skip an index, and
+  // density bounds the board as a side effect — 21 nodes cannot span 2^31
+  // consecutive ranks.
+  const r = run(path.join(FIXTURES, 'layout-rank-gap.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /grid\.x: leaves 28 columns empty \(12, 13, 14/,
+    'must count the empty columns and sample them');
+  assert.match(r.diag, /occupied columns must be 0\.\.41 with no holes/);
+});
+
+test('provenance must name a real file and region, not merely something truthy', () => {
+  // This validator tested truthiness where validate-extract.js tests type and
+  // placeholder on the identical source object, so `{ file: 1, heading: 2 }`,
+  // whitespace and "TODO" all validated clean — and `inferred: 'yes'` fell
+  // through the strict `=== true` to the drawn branch, reading a node as
+  // measured off an image it does not appear on.
+  const r = run(path.join(FIXTURES, 'layout-source-untyped.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /gateway\.source: must name the image file and the region .* non-empty strings/);
+  assert.match(r.diag, /quota-manager\.source: names a placeholder/);
+  assert.match(r.diag, /manual-run\.source: inferred must be true or false, got "yes"/);
+});
+
+test('the 260px clustering the header claims reproduces every rank in the file', () => {
+  // data/layout.js's header is the only reason these 21 coordinates can be
+  // challenged, and it states a specific derivation: centres clustered at 260px
+  // and numbered. tools/validate-layout.js deliberately does NOT re-cluster —
+  // review cycle 2 of #5 replaced a hardcoded tolerance with monotonicity so a
+  // re-measured centre or any tolerance in the collision-free 200-270 band
+  // stays valid — which left the header's specific number resting on a sweep an
+  // agent ran once. It belongs in a test rather than in the gate: this pins the
+  // documented derivation without constraining the validator.
+  const layout = require(LAYOUT);
+  const measured = layout.nodes.filter((n) => n.px);
+  const rank = (axis, tol) => {
+    const vals = [...new Set(measured.map((n) => n.px[axis]))].sort((a, b) => a - b);
+    const out = new Map();
+    let r = 0;
+    vals.forEach((v, i) => { if (i > 0 && v - vals[i - 1] > tol) r++; out.set(v, r); });
+    return out;
+  };
+  assert.strictEqual(measured.length, 19, 'nineteen nodes are read off the image');
+  const rx = rank('x', 260);
+  const ry = rank('y', 260);
+  for (const n of measured) {
+    assert.strictEqual(n.grid.x, rx.get(n.px.x),
+      `${n.id}: grid.x must be the rank 260px clustering gives px.x ${n.px.x}`);
+    assert.strictEqual(n.grid.y, ry.get(n.px.y),
+      `${n.id}: grid.y must be the rank 260px clustering gives px.y ${n.px.y}`);
+  }
+  // And the other half of the header's claim: 280 is past the edge of the band.
+  const cells = new Set();
+  let collisions = 0;
+  for (const n of measured) {
+    const k = `${rank('x', 280).get(n.px.x)},${rank('y', 280).get(n.px.y)}`;
+    if (cells.has(k)) collisions++; else cells.add(k);
+  }
+  assert.ok(collisions > 0, 'at 280 two nodes collide — that is why 260 is the chosen tolerance');
+});
+
 test('an inferred node must sit where its own stated reason says it does', () => {
   // Manual Run and Conduct Audit Service are the only two positions resting on
   // an argument rather than a detected pixel. The validator used to check that

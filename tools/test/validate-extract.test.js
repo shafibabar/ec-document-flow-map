@@ -307,6 +307,24 @@ test('a topic node id must carry its kind prefix', () => {
   assert.match(r.diag, /nodes\[0\]\.id/, 'and name the offending entry');
 });
 
+test('a node id that is not a string is diagnosed, not skipped', () => {
+  // Found in review cycle 3 of #5 by driving this validator rather than reading
+  // it. checkNodeId opened `if (typeof id !== 'string' || typeof kind !==
+  // 'string') return; // already diagnosed`. True of kind, which is an enum;
+  // false of id, whose only other check was REQUIRED testing `=== undefined`.
+  // So `id: 12345` was present, was not an enum, and the early return skipped
+  // the prefix rule, the service-shadow rule and the name-derivation rule in
+  // silence — `ok — 1 extract(s) conform`, exit 0, on the merge key #4 spent
+  // three review cycles on.
+  //
+  // Assert the diagnostic, never the exit code alone: the failure mode here is
+  // silence, and a validator that crashed instead would also exit non-zero.
+  const r = run(path.join(FIXTURES, 'numeric-node-id.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /nodes\[0\]\.id: must be a non-empty string, got 12345/);
+  assert.match(r.diag, /merge key/, 'and say why a typed id matters');
+});
+
 // ---------------------------------------------------------------------------
 // Added in review cycle 4. Cycle 3 closed one merge-key collision; writing trial
 // extracts of Gateway, Indexer and Manual Run from the schema alone found four
