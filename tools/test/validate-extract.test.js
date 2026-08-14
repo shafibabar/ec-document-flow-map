@@ -215,11 +215,23 @@ test('every store technology the corpus names is accepted', () => {
   assert.strictEqual(r.code, 0, `these are all real store rows:\n${r.out}`);
 });
 
-test('a store technology no document names is still rejected', () => {
-  // Widening the enum must not turn it into a free-for-all.
+test('an unheard-of store technology is surfaced as a note, not rejected', () => {
+  // This test asserted the opposite until cycle 3. Cycle 2 widened the store
+  // enum from three values to eight and added this to stop the widening
+  // becoming a free-for-all — a reasonable instinct. But a cycle 3 sweep of the
+  // Store column across all fifteen documents found two more the enum would
+  // still have rejected (Alcatraz caches, ShedLock) and a literal "Various".
+  //
+  // Twice widened and still wrong is the signal. `store` is now advisory. The
+  // deciding argument is a cost asymmetry: a missed odd value costs a tidy-up
+  // in Parent 2, where every extract is read anyway, while a wrongly rejected
+  // extract blocks an agent that recorded the document faithfully and whose
+  // only way past the gate is to write something the document does not say.
+  //
+  // `transport` stays closed — its six values drive rendering. `store` is a label.
   const r = run(path.join(FIXTURES, 'bad-store.js'));
-  assert.notStrictEqual(r.code, 0);
-  assert.match(r.diag, /"postgres" is not valid/);
+  assert.strictEqual(r.code, 0, `a faithful extract must not be blocked:\n${r.out}`);
+  assert.match(r.out, /postgres/, 'but the odd value must still be surfaced');
 });
 
 test('an invented direction is rejected', () => {
@@ -250,6 +262,39 @@ test('one omission is reported once, not twice', () => {
   const r = run(path.join(FIXTURES, 'structural.js'));
   const lines = r.diag.split('\n').filter((l) => /edges\[0\]\.direction: missing/.test(l));
   assert.strictEqual(lines.length, 1, `expected one line, got ${lines.length}:\n${r.out}`);
+});
+
+// ---------------------------------------------------------------------------
+// Added in review cycle 3.
+// ---------------------------------------------------------------------------
+
+test('an unrecognised store technology is a note, not a failure', () => {
+  // The enum was widened twice and was still wrong: a sweep of all fifteen
+  // documents found Alcatraz caches and ShedLock, which it would have rejected.
+  // A gate that fails a faithful extract teaches agents to write something the
+  // document does not say, so this one advises instead.
+  const r = run(path.join(FIXTURES, 'unknown-store.js'));
+  assert.strictEqual(r.code, 0, `an odd store must not block a faithful extract:\n${r.out}`);
+  assert.match(r.out, /quantumdb/, 'but it must still be surfaced');
+  assert.match(r.out, /note/i, 'as a note rather than a problem');
+});
+
+test('an external: id may not shadow an in-scope service', () => {
+  // The merge-key collision: Gateway calls Config Curator and would reasonably
+  // write external:config-curator, while Config Curator's own extract writes
+  // config-curator — one service, two nodes on the map.
+  const r = run(path.join(FIXTURES, 'external-shadow.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.out, /config-curator/, 'must name the offending id');
+  assert.match(r.out, /outside the estate/i,
+    'and must explain what external actually means, not just reject it');
+});
+
+test('a topic node id must carry its kind prefix', () => {
+  const r = run(path.join(FIXTURES, 'unprefixed-id.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.out, /topic:/, 'must state the required prefix');
+  assert.match(r.out, /nodes\[0\]\.id/, 'and name the offending entry');
 });
 
 test('the real worked example conforms', () => {

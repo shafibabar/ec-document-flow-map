@@ -42,7 +42,30 @@ const KINDS = ['service', 'store', 'topic', 'dlt', 'external'];
  * either drop the row or mislabel it, and both are worse than the row. `jdbc`
  * is still absent from all 33 documents and still not here.
  */
-const STORES = ['mongo', 's3', 'elastic', 'redis', 'athena', 'ceph', 'hazelcast', 'unknown'];
+/**
+ * Store technologies seen in the corpus so far. **Advisory, not enforced.**
+ *
+ * This started as a closed enum of three (`mongo`, `s3`, `elastic`). Cycle 2
+ * found it rejected legitimate extracts for three services and widened it to
+ * eight. A sweep of the Store column across all fifteen documents in cycle 3
+ * found two more it would still have rejected — Alcatraz property/service
+ * caches (Actioning) and ShedLock (Manual Run) — plus a literal "Various" in
+ * Policy Evaluator.
+ *
+ * Twice widened and still wrong is the signal. The enum is now advisory: an
+ * unrecognised value prints a note and exits 0.
+ *
+ * The reasoning is a cost asymmetry, not laziness. A missed odd value costs a
+ * tidy-up in Parent 2, where every extract is being read anyway. A wrongly
+ * rejected extract blocks an agent that recorded the document faithfully, and
+ * its only route past the gate is to write something the document does not say
+ * — a gate that punishes accuracy teaches agents to falsify. `transport` stays
+ * closed because its six values drive rendering; `store` is a label.
+ */
+const KNOWN_STORES = [
+  'mongo', 's3', 'elastic', 'redis', 'athena', 'ceph', 'hazelcast',
+  'alcatraz', 'shedlock', 'unknown'
+];
 
 /**
  * Edge directions. Documented as a closed set since the schema was written; it
@@ -57,6 +80,28 @@ const GROUPS = ['Alerting', 'Actioning', 'Search', 'Review', 'Reporting', 'none'
 
 /** 2.0 is out of scope, so it is not listed. `3.0` must be quoted — see below. */
 const GENERATIONS = ['3.0', 'integrated', 'none', 'unknown'];
+
+/**
+ * The `id` prefix each node kind must carry.
+ *
+ * `id` is the key Parent 2 joins fifteen extracts on, and the prefix is the only
+ * part of it a tool can check. It is worth checking: review cycle 3 wrote trial
+ * extracts of Indexer, Manual Run and Gateway from the schema document alone and
+ * they produced `external:config-curator` for a service whose own extract will
+ * produce `config-curator` — two nodes on the map for one service. The prefix
+ * check does not catch that on its own, but it does catch the whole class of
+ * "I invented a shape for this kind" mistakes, which is where the divergence
+ * starts.
+ *
+ * A `service` node carries the bare slug, so it must have no prefix at all —
+ * `external:gateway` and `gateway` are different keys.
+ */
+const ID_PREFIX = {
+  topic: 'topic:',
+  dlt: 'dlt:',
+  store: 'store:',
+  external: 'external:'
+};
 
 /**
  * Structural fields the merge in Parent 2 cannot work without.
@@ -84,8 +129,8 @@ const REQUIRED = {
  */
 const ENUMS = {
   nodes: { kind: KINDS, group: GROUPS, generation: GENERATIONS },
-  edges: { transport: TRANSPORTS, direction: DIRECTIONS },
-  stores: { store: STORES }
+  edges: { transport: TRANSPORTS, direction: DIRECTIONS }
+  // `stores.store` is deliberately absent — see KNOWN_STORES.
 };
 
 /**
@@ -132,9 +177,60 @@ const COLLECTIONS = [
   'tenancy', 'ambiguities'
 ];
 
+/**
+ * The fifteen in-scope services, by their canonical node id.
+ *
+ * This is the merge key. Parent 2 joins fifteen independently-written extracts
+ * on `id`, and a service referenced by two extracts under two ids becomes two
+ * nodes on the map for one service.
+ *
+ * The failure is specific and was found by writing trial extracts from the
+ * schema alone: Gateway calls Config Curator, so Gateway's extract naturally
+ * reaches for `external:config-curator` — Config Curator being external *to
+ * Gateway*. But Config Curator is one of the fifteen and its own extract will
+ * call it `config-curator`. Both agents are being reasonable; the map ends up
+ * with two nodes.
+ *
+ * So `external:` means external to the estate, never merely to the service
+ * doing the extracting.
+ */
+const SERVICE_IDS = [
+  'gateway', 'queue-qualifier', 'surveillance-filter', 'policy-evaluator',
+  'quota-manager', 'indexer', 'config-curator', 'centralised-audit',
+  'conduct-audit-service', 'alerting', 'echo-engine', 'manual-run',
+  'reporting', 'review-service', 'actioning'
+];
+
 const problems = [];
+const notes = [];
 function fail(file, where, msg) {
   problems.push(`${path.basename(file)}: ${where}: ${msg}`);
+}
+
+/**
+ * Node ids must carry their kind's prefix, and must not shadow a known service.
+ */
+function checkNodeId(file, where, entry) {
+  const { id, kind } = entry;
+  if (typeof id !== 'string' || typeof kind !== 'string') return; // already diagnosed
+  const prefix = ID_PREFIX[kind];
+
+  if (kind === 'service') {
+    if (id.includes(':')) {
+      fail(file, `${where}.id`, `a service node carries the bare slug, not "${id}" — ` +
+        '"gateway" and "external:gateway" are different merge keys');
+    }
+    return;
+  }
+  if (prefix && !id.startsWith(prefix)) {
+    fail(file, `${where}.id`, `a ${kind} node's id must start with "${prefix}", got "${id}"`);
+  }
+  if (kind === 'external' && SERVICE_IDS.includes(id.replace(/^external:/, ''))) {
+    fail(file, `${where}.id`,
+      `"${id}" names one of the fifteen in-scope services. Use the bare slug ` +
+      `"${id.replace(/^external:/, '')}" and kind "service". ` +
+      '"external" means outside the estate, not merely outside this service.');
+  }
 }
 
 /**
@@ -344,6 +440,15 @@ function checkFile(file) {
       for (const [field, allowed] of Object.entries(enums)) {
         checkEnum(file, `${where}.${field}`, entry[field], allowed, HINTS[field]);
       }
+
+      if (key === 'stores' && typeof entry.store === 'string'
+          && !KNOWN_STORES.includes(entry.store)) {
+        notes.push(`${path.basename(file)}: ${where}.store: "${entry.store}" is not a ` +
+          'store technology seen before. Not an error — check it matches the document ' +
+          'and mention it when closing the issue, so Parent 2 knows to expect it.');
+      }
+
+      if (key === 'nodes') checkNodeId(file, where, entry);
     });
   }
 
@@ -368,6 +473,14 @@ if (files.length === 0) {
   process.exit(2);
 }
 files.forEach(checkFile);
+
+// Advisories print whether or not the run passed — they are things to look at,
+// never reasons to stop.
+if (notes.length) {
+  console.log(`\n${notes.length} note(s):\n`);
+  notes.forEach((n) => console.log(`  ${n}`));
+  console.log('');
+}
 
 if (problems.length) {
   console.error(`\n${problems.length} problem(s) found:\n`);

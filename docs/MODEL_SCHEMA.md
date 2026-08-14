@@ -260,6 +260,23 @@ for one thing produces two nodes on the map, so the prefixes are fixed:
 | `store` | `store:` + the name as the document writes it | `store:surveil.av5`, `store:EC-S3` |
 | `external` | `external:` + slug of the label | `external:archive` |
 
+**`external:` means outside the estate, never merely outside the service you are
+extracting.** This is the trap: Gateway calls Config Curator, so Gateway's
+extract reaches for `external:config-curator` — reasonable, since Config Curator
+is external *to Gateway*. But Config Curator is one of the fifteen and its own
+extract calls it `config-curator`. Two reasonable agents, one service, two nodes
+on the map. If the thing you are referencing is one of the fifteen in-scope
+services, use its bare slug and `kind: "service"`, however external it feels from
+where you are standing. The validator rejects an `external:` id that shadows a
+known service.
+
+The fifteen canonical service slugs: `gateway` · `queue-qualifier` ·
+`surveillance-filter` · `policy-evaluator` · `quota-manager` · `indexer` ·
+`config-curator` · `centralised-audit` · `conduct-audit-service` · `alerting` ·
+`echo-engine` · `manual-run` · `reporting` · `review-service` · `actioning`.
+Note `centralised-audit` is spelled with an `s`, matching the service name, while
+its folder is `Centralized Audit` with a `z`.
+
 Slugs for services and external systems are lower-case. Store and topic ids keep
 the name exactly as the document or Parent #3 writes it, because that string is
 what the join matches on. The literal name always also goes in `name`, with
@@ -358,7 +375,7 @@ names. Check yours before you go hunting through prose:**
 | `Conduct Audit Service/EVENT_FLOW_MAP.md` | `### Retry and DLT behavior` |
 | `Centralized Audit/EVENT_FLOW_MAP.md` | `### 1. Retry / DLT Publishing (via RetryTopicManager)` |
 
-**For the other twelve there is no such section** — the data is scattered across
+**For the other eleven there is no such section** — the data is scattered across
 Events Consumed rows, prose paragraphs and mermaid diagrams, and must be gathered
 from all three. Any field may be `"unknown"`; partial retry data is normal.
 
@@ -373,31 +390,29 @@ of 33 documents; "DLQ" appears in none.
 `store` (required, see below) · `entity` · `collection` · `repository` ·
 `operations` · `calledBy` · `windowed` · `source`
 
-`store` is one of: `mongo` · `s3` · `elastic` · `redis` · `athena` · `ceph` ·
-`hazelcast` · `unknown`.
+`store` names the technology. Values seen so far, across all fifteen documents:
 
-The last four are not padding. The estate is mostly MongoDB, S3 and
-Elasticsearch, but three of the fifteen services record more, and the rule is to
-write what the document says:
+`mongo` · `s3` · `elastic` · `redis` · `athena` · `ceph` · `hazelcast` ·
+`alcatraz` · `shedlock` · `unknown`
 
-| Service | Section | Technology |
-|---|---|---|
-| Actioning | `Persistent Store Interactions` rows 13–14 | `Ceph/object store`, `Hazelcast` |
-| Quota Manager | `### Redis` | `Redis` |
-| Manual Run | `### AWS Athena`, `### Archive Elasticsearch` | `Athena`, and Elasticsearch |
+**This list is advisory, not enforced.** A value outside it prints a note and
+still passes. That is deliberate, and it is the second reversal on this field:
+the list began as three values, was widened to eight in review cycle 2 after it
+rejected legitimate extracts for three services, and a cycle 3 sweep of the Store
+column across every document found two more it would *still* have rejected —
+Alcatraz property and service caches in Actioning, ShedLock in Manual Run — plus
+a literal `Various` in Policy Evaluator.
 
-Map the document's wording onto the value: `MongoDB` → `mongo`, `AWS S3` /
-`S3 bucket` → `s3`, `Elasticsearch` / `Archive index (hlrest)` → `elastic`,
-`Ceph/object store` → `ceph`. If your document names a store technology not on
-the list, use `unknown`, put the document's exact wording in `entity` or `note`,
-and raise it in `ambiguities` — do not force it into the nearest value.
+Twice widened and still wrong is the signal. The deciding argument is a cost
+asymmetry rather than tidiness: a missed odd value costs a tidy-up in Parent 2,
+where every extract is being read anyway, while a wrongly rejected extract blocks
+an agent who recorded the document faithfully, and its only route past the gate
+is to write something the document does not say. **A gate that punishes accuracy
+teaches agents to falsify.**
 
-From Persistent Store Interactions. Feeds the State layer. These entries are the
-*only* record of a Mongo collection — collections are not nodes, so anything left
-out here is not in the model at all.
-
-**A `stores[]` entry does not by itself create an edge or a node.** See "Which
-stores become nodes" under `nodes[]`.
+So: use the closest value above if one genuinely fits, invent one if none does,
+and say so when you close your issue. `transport` stays a closed set because its
+six values drive what gets drawn; `store` is a label.
 
 ### `transformation` — one object
 
