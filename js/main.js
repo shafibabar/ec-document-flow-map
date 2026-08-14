@@ -62,18 +62,69 @@
          * rather than going round again.
          */
         var pt = Iso.loopPoint(here.grid.x, here.grid.y, k);
-        return { gx: pt.x, gy: pt.y, cargo: prev.cargo, pulse: 0, retrying: true };
+        var ahead = Iso.loopPoint(here.grid.x, here.grid.y, Math.min(1, k + 0.03));
+        return { gx: pt.x, gy: pt.y, cargo: prev.cargo, pulse: 0, retrying: true,
+                 heading: unit(ahead.x - pt.x, ahead.y - pt.y),
+                 puff: (st.t / 700) % 1 };
       }
 
       return {
         gx: from.grid.x + (here.grid.x - from.grid.x) * e,
         gy: from.grid.y + (here.grid.y - from.grid.y) * e,
         cargo: prev.cargo,                                   // changes ON arrival
-        pulse: 0
+        pulse: 0,
+        heading: unit(here.grid.x - from.grid.x, here.grid.y - from.grid.y),
+        puff: (st.t / 700) % 1
       };
     }
     var p = 0.5 + 0.5 * Math.sin(st.t / 260);
-    return { gx: here.grid.x, gy: here.grid.y, cargo: cur.cargo, pulse: p, badge: attemptBadge(cur) };
+    // Standing at a platform: keep facing the way the next hop leaves, and let
+    // the chimney tick over slowly rather than stopping dead.
+    var nxt = st.idx < scenario.steps.length - 1 ? stopById(step(st.idx + 1).at) : null;
+    var head = nxt && nxt !== here
+      ? unit(nxt.grid.x - here.grid.x, nxt.grid.y - here.grid.y)
+      : lastHeading;
+    return { gx: here.grid.x, gy: here.grid.y, cargo: cur.cargo, pulse: p,
+             badge: attemptBadge(cur), heading: head, puff: (st.t / 2400) % 1 };
+  }
+
+  var lastHeading = { x: 1, y: 0 };
+
+  function unit(dx, dy) {
+    var L = Math.sqrt(dx * dx + dy * dy);
+    if (!L) return lastHeading;
+    lastHeading = { x: dx / L, y: dy / L };
+    return lastHeading;
+  }
+
+  /*
+   * The last few metres. Kafka is rail, and everything else — an S3 upload, an
+   * Elasticsearch index write, a Mongo write — is a road, so a document reaching
+   * one of those travels by cart from the platform while the train stands there.
+   * The carts only run during the dwell, which is what makes a stop look like
+   * somewhere work happens rather than somewhere the train merely pauses.
+   */
+  function roadCarts() {
+    if (st.phase !== 'dwell') return [];
+    var here = step(st.idx).at;
+    var tint = step(st.idx).cargo.tint;
+    var out = [];
+    flow.tracks.forEach(function (t) {
+      if (t.layer || t.from === t.to) return;
+      if (t.transport !== 's3' && t.transport !== 'mongo' && t.transport !== 'elastic') return;
+      if (t.from !== here && t.to !== here) return;
+      var a = stopById(t.from), b = stopById(t.to);
+      if (!a || !b) return;
+      // Out and back on a fixed cycle, so two carts on the same road stay in step.
+      var k = (st.t % 2800) / 2800;
+      var e = k < 0.5 ? k * 2 : (1 - k) * 2;
+      out.push({
+        gx: a.grid.x + (b.grid.x - a.grid.x) * e,
+        gy: a.grid.y + (b.grid.y - a.grid.y) * e,
+        tint: tint
+      });
+    });
+    return out;
   }
 
   /** "attempt 2 of 3", or nothing at all on a step that is not a retry. */
@@ -181,6 +232,7 @@
     Render.draw(ctx, canvas, flow, {
       dpr: st.dpr,
       cart: cart,
+      carts: roadCarts(),
       activeTrack: activeTrack(),
       stopState: stopStateFor,
       hideLayers: st.hideLayers
@@ -221,9 +273,11 @@
     Iso.lookAt(stopById(step(0).at).grid.x, stopById(step(0).at).grid.y);
   };
 
+  // The buttons are glyph-only now — the map needs the room more than the
+  // controls need words.
   document.getElementById('play').onclick = function () {
     st.paused = !st.paused;
-    this.textContent = st.paused ? '▶ Play' : '❚❚ Pause';
+    this.textContent = st.paused ? '▶' : '❚❚';
   };
   document.getElementById('back').onclick = function () { goto(st.idx - 1); };
   document.getElementById('fwd').onclick = function () { goto(st.idx + 1); };
@@ -241,8 +295,15 @@
 
   document.getElementById('followBtn').onclick = function () {
     st.follow = !st.follow;
-    this.textContent = st.follow ? '◎ Following' : '○ Free';
     this.classList.toggle('on', st.follow);
+  };
+
+  // The legend is off by default. The buildings say what they are, so it is
+  // there for the track types rather than as a permanent fixture.
+  var elLegend = document.getElementById('legend');
+  document.getElementById('legendBtn').onclick = function () {
+    elLegend.hidden = !elLegend.hidden;
+    this.classList.toggle('on', !elLegend.hidden);
   };
 
   function fit() {

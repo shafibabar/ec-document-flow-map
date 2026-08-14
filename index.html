@@ -7,65 +7,60 @@
   Opens straight from the filesystem. No build step, no dependencies, no
   network calls — plain script tags, canvas and vanilla JS.
 
-  Load order: data first, then projection, then rendering, then the engine.
+  Load order: data, then projection, then the sprites that stand on it, then
+  the renderer that arranges them, then the engine that moves the train.
 -->
 
 <canvas id="map"></canvas>
 
-<header id="topbar">
-  <div class="brand">
-    <span class="dot"></span>
-    <div>
-      <h1>Enterprise Conduct — document flow</h1>
-      <p id="scenarioName">Happy path · bulk indexing</p>
-    </div>
-  </div>
-  <div id="count" class="count">1 / 7</div>
-</header>
-
-<div id="progressTrack"><div id="progress"></div></div>
-
+<!-- The map is the interface. Everything else stays small and out of its way. -->
 <section id="panel">
   <div class="row">
-    <span class="eyebrow">Now carrying</span>
-    <span id="timer" class="timer">—</span>
+    <span id="scenarioName" class="eyebrow">Happy path</span>
+    <span id="count" class="count">1 / 7</span>
   </div>
-  <div id="cargo" class="cargo">indexable.json</div>
+
+  <h2 id="title">Raw communication lands</h2>
+
+  <div class="cargoRow">
+    <span id="cargo" class="cargo">indexable.json</span>
+    <span id="timer" class="timer">&mdash;</span>
+  </div>
   <div id="attempt" class="attempt" hidden></div>
   <div id="stamps" class="stamps"></div>
 
-  <h2 id="title">Raw communication lands</h2>
   <p id="note"></p>
 
-  <div class="meta"><span class="eyebrow">Arrived via</span><code id="via">—</code></div>
-  <div class="meta"><span class="eyebrow">Source</span><span id="src" class="src"></span></div>
+  <div class="meta"><code id="via">&mdash;</code><span id="src" class="src"></span></div>
+  <div id="progressTrack"><div id="progress"></div></div>
 </section>
 
 <nav id="controls">
   <select id="scenario" title="Scenario"></select>
   <button id="restart" title="Restart">&#8635;</button>
   <button id="back" title="Previous stop">&#9664;</button>
-  <button id="play" class="wide" title="Play / pause (space)">&#10074;&#10074; Pause</button>
+  <button id="play" class="wide" title="Play / pause (space)">&#10074;&#10074;</button>
   <button id="fwd" title="Next stop">&#9654;</button>
   <button id="speed" title="Speed">1&times;</button>
-  <button id="plumbing" class="on" title="Show config-sync and audit plumbing">&#8763; Plumbing</button>
-  <button id="followBtn" class="on" title="Follow the cart">&#9673; Following</button>
+  <button id="plumbing" class="on" title="Config-sync and audit plumbing">&#8763;</button>
+  <button id="followBtn" class="on" title="Follow the train">&#9673;</button>
   <button id="fit" title="Fit the whole estate">&#10530;</button>
+  <button id="legendBtn" title="Legend">?</button>
 </nav>
 
-<aside id="legend">
-  <div><i class="rail kafka"></i>Kafka topic</div>
+<aside id="legend" hidden>
+  <div><i class="rail kafka"></i>Kafka topic &mdash; railway track</div>
   <div><i class="rail cdc"></i>Debezium CDC &mdash; an outbox row, not a direct publish</div>
-  <div><i class="rail elastic"></i>Elasticsearch index</div>
-  <div><i class="rail s3"></i>S3 object</div>
-  <div><i class="rail mongo"></i>MongoDB write</div>
-  <div><i class="rail retry"></i>Retry topic &mdash; back to the same consumer</div>
-  <div><i class="rail dlt"></i>Dead letter topic &mdash; a dead end</div>
+  <div><i class="rail road"></i>S3 / Elasticsearch / Mongo &mdash; road, worked by cart</div>
+  <div><i class="rail retry"></i>Retry topic &mdash; a loop back to the same consumer</div>
+  <div><i class="rail dlt"></i>Dead letter topic &mdash; a dead-end siding</div>
   <div><i class="rail terminus"></i>End of the surveillance line</div>
+  <div><i class="rail plumb"></i>Config sync and audit plumbing</div>
   <div><i class="rail unverified"></i>Named by its consumer only &mdash; publisher undocumented</div>
 </aside>
 
 <script src="data/flow.js"></script>
 <script src="js/iso.js"></script>
+<script src="js/sprites.js"></script>
 <script src="js/render.js"></script>
 <script src="js/main.js"></script>

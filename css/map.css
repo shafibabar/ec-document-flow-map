@@ -1,149 +1,144 @@
+/*
+ * map.css — the chrome around the map.
+ *
+ * Kept deliberately small. The buildings carry their own names now, so a big
+ * banner and a wide legend were just covering up countryside. Everything here
+ * is a compact panel or a pill of buttons, and the legend is off until asked
+ * for.
+ */
+
 * { box-sizing: border-box; }
 
 html, body {
   margin: 0; height: 100%; overflow: hidden;
-  background: #0d1117; color: #e6edf6;
-  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #4a7740; color: #22301f;
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-text-size-adjust: 100%;
 }
 
 #map { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
 #map:active { cursor: grabbing; }
 
-/* ------------------------------------------------------------------ top bar */
-#topbar {
-  position: fixed; top: 0; left: 0; right: 0;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 12px 16px calc(12px + env(safe-area-inset-top, 0px));
-  background: linear-gradient(180deg, rgba(13,17,23,.96), rgba(13,17,23,0));
-  pointer-events: none;
-}
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
-.brand p { margin: 1px 0 0; font-size: 12px; color: #8fa3bf; }
-.dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: #f59e0b; box-shadow: 0 0 14px #f59e0b;
-}
-.count {
-  font-variant-numeric: tabular-nums; font-size: 12px; color: #8fa3bf;
-  background: rgba(22,29,39,.85); border: 1px solid #23303f;
-  padding: 5px 10px; border-radius: 999px;
-}
-
-#progressTrack {
-  position: fixed; top: 0; left: 0; right: 0; height: 2px;
-  background: rgba(255,255,255,.06);
-}
-#progress {
-  height: 100%; width: 0;
-  background: linear-gradient(90deg, #38bdf8, #f59e0b);
-  transition: width .5s ease;
-}
-
-/* -------------------------------------------------------------------- panel */
+/* ---------------------------------------------------------------- the panel */
 #panel {
-  position: fixed; left: 16px; bottom: 84px; width: min(390px, calc(100vw - 32px));
-  background: rgba(16,22,31,.94); border: 1px solid #24303f; border-radius: 14px;
-  padding: 14px 16px 16px;
-  box-shadow: 0 18px 50px rgba(0,0,0,.55);
-  backdrop-filter: blur(8px);
+  position: fixed; left: 14px; top: 14px; width: min(320px, calc(100vw - 28px));
+  background: rgba(252, 250, 244, .93);
+  border: 1px solid rgba(90, 78, 58, .28);
+  border-radius: 10px;
+  padding: 10px 12px 11px;
+  box-shadow: 0 10px 30px rgba(24, 40, 20, .28);
+  backdrop-filter: blur(6px);
 }
-.row { display: flex; align-items: center; justify-content: space-between; }
+.row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .eyebrow {
-  font-size: 10px; text-transform: uppercase; letter-spacing: .09em;
-  color: #6f83a0; font-weight: 600;
+  font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+  color: #7d7360; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.timer { font-size: 11px; color: #f59e0b; font-variant-numeric: tabular-nums; }
+.count { font-size: 10.5px; color: #8b8172; font-variant-numeric: tabular-nums; flex: none; }
+
+#panel h2 { margin: 5px 0 6px; font-size: 15px; font-weight: 680; letter-spacing: -.01em; }
+
+.cargoRow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .cargo {
-  font-size: 19px; font-weight: 680; margin: 5px 0 0;
-  letter-spacing: -.015em; word-break: break-word;
+  font-size: 13.5px; font-weight: 660; letter-spacing: -.01em;
+  word-break: break-word; color: #2f4858;
 }
-/* Only ever present on a retry ladder — see paintPanel(). */
+.timer { font-size: 10.5px; color: #a06a2c; font-variant-numeric: tabular-nums; flex: none; }
+
 .attempt {
-  display: inline-block; margin-top: 7px;
-  font-size: 11px; font-weight: 650; letter-spacing: .02em;
-  padding: 3px 9px; border-radius: 999px;
-  background: rgba(127,29,29,.35); color: #fca5a5;
-  border: 1px solid rgba(248,113,113,.45);
+  display: inline-block; margin-top: 5px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(192, 57, 43, .12); color: #9c3524;
+  border: 1px solid rgba(192, 57, 43, .35);
   font-variant-numeric: tabular-nums;
 }
-/* The last rung of the ladder. After this one there is no retry-2. */
-.attempt.spent { background: rgba(127,29,29,.6); color: #fecaca; border-color: #f87171; }
+.attempt.spent { background: rgba(192, 57, 43, .25); border-color: #c0392b; }
 
-.stamps { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0 2px; }
+.stamps { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; }
 .stamp {
-  font-size: 10.5px; padding: 2.5px 8px; border-radius: 999px;
-  background: rgba(56,189,248,.12); color: #7dd3fc; border: 1px solid rgba(56,189,248,.28);
+  font-size: 9.5px; padding: 1.5px 6px; border-radius: 999px;
+  background: rgba(63, 127, 168, .13); color: #2f6d8f;
+  border: 1px solid rgba(63, 127, 168, .3);
 }
-#panel h2 {
-  margin: 13px 0 5px; font-size: 14.5px; font-weight: 650;
-  padding-top: 12px; border-top: 1px solid #1e2937;
-}
-#panel p { margin: 0; font-size: 13px; color: #b6c5da; }
-.meta { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; }
+
+#panel p { margin: 7px 0 0; font-size: 12px; color: #4e4a41; }
+
+.meta { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
 .meta code {
-  font-size: 11px; color: #7dd3fc; word-break: break-all;
+  font-size: 10.5px; color: #2f6d8f; word-break: break-all;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.src { font-size: 11px; color: #6f83a0; }
+.src { font-size: 10px; color: #8b8172; }
 
-/* ----------------------------------------------------------------- controls */
+#progressTrack {
+  margin-top: 9px; height: 3px; border-radius: 2px;
+  background: rgba(90, 78, 58, .16); overflow: hidden;
+}
+#progress {
+  height: 100%; width: 0; border-radius: 2px;
+  background: linear-gradient(90deg, #3f7fa8, #e0902c);
+  transition: width .45s ease;
+}
+body.failing #progress { background: linear-gradient(90deg, #3f7fa8, #c0392b); }
+body.failing .timer { color: #9c3524; }
+
+/* ------------------------------------------------------------------ controls */
 #controls {
   position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  display: flex; gap: 6px; padding: 6px;
-  background: rgba(16,22,31,.95); border: 1px solid #24303f;
-  border-radius: 999px; box-shadow: 0 14px 40px rgba(0,0,0,.5);
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex; gap: 3px; padding: 4px;
+  background: rgba(252, 250, 244, .93);
+  border: 1px solid rgba(90, 78, 58, .28);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(24, 40, 20, .3);
 }
 #controls button {
-  min-width: 40px; height: 36px; padding: 0 11px;
-  background: transparent; color: #cdd9e8;
+  min-width: 30px; height: 28px; padding: 0 8px;
+  background: transparent; color: #4e4a41;
   border: 0; border-radius: 999px; cursor: pointer;
-  font: inherit; font-size: 13px; line-height: 1;
+  font: inherit; font-size: 12px; line-height: 1;
 }
-#controls button:hover { background: rgba(255,255,255,.07); }
-#controls button.wide { min-width: 92px; font-weight: 600; }
-#controls button.on { background: rgba(245,158,11,.16); color: #fbbf24; }
+#controls button:hover { background: rgba(90, 78, 58, .1); }
+#controls button.wide { min-width: 40px; }
+#controls button.on { background: rgba(224, 144, 44, .18); color: #a0611c; }
 #controls select {
-  height: 36px; max-width: 190px; padding: 0 10px;
-  background: rgba(255,255,255,.06); color: #cdd9e8;
-  border: 1px solid #2b3a4d; border-radius: 999px;
-  font: inherit; font-size: 12.5px; cursor: pointer;
+  height: 28px; max-width: 170px; padding: 0 8px;
+  background: rgba(90, 78, 58, .07); color: #4e4a41;
+  border: 1px solid rgba(90, 78, 58, .2); border-radius: 999px;
+  font: inherit; font-size: 11.5px; cursor: pointer;
   appearance: none; text-overflow: ellipsis;
 }
-#controls select:hover { background: rgba(255,255,255,.1); }
-#controls select option { background: #111823; color: #cdd9e8; }
+#controls select:hover { background: rgba(90, 78, 58, .12); }
+#controls select option { background: #fcfaf4; color: #33302a; }
 
-/* ------------------------------------------------------------------- legend */
+/* -------------------------------------------------------------------- legend */
 #legend {
-  position: fixed; right: 16px; bottom: 84px;
-  background: rgba(16,22,31,.9); border: 1px solid #24303f;
-  border-radius: 12px; padding: 11px 13px;
-  font-size: 11.5px; color: #9fb0c8; display: grid; gap: 7px;
-  max-width: 260px;
+  position: fixed; right: 14px; bottom: 52px;
+  background: rgba(252, 250, 244, .95);
+  border: 1px solid rgba(90, 78, 58, .28);
+  border-radius: 9px; padding: 9px 11px;
+  font-size: 10.5px; color: #55503f; display: grid; gap: 5px;
+  max-width: 250px;
+  box-shadow: 0 8px 24px rgba(24, 40, 20, .28);
 }
-#legend div { display: flex; align-items: center; gap: 9px; }
-.rail { width: 26px; height: 0; border-top: 3px solid #3f4d63; flex: none; }
-.rail.cdc { border-top-style: dashed; border-color: #7dd3fc; }
-.rail.elastic { border-top-width: 5px; border-color: #4ade80; }
-.rail.s3 { border-top-style: dotted; border-color: #94a3b8; }
-.rail.mongo { border-top-style: dotted; border-color: #818cf8; }
-.rail.retry { border-color: #f87171; }
-.rail.dlt { border-top-style: dashed; border-color: #7f1d1d; }
+#legend[hidden] { display: none; }
+#legend div { display: flex; align-items: center; gap: 7px; }
+.rail { width: 22px; height: 0; border-top: 3px solid #6d5942; flex: none; }
+.rail.kafka { border-top-width: 4px; border-color: #8a8172; }
+.rail.cdc { border-top-style: dashed; border-color: #8a8172; }
+.rail.road { border-top-width: 5px; border-color: #a99c86; }
+.rail.retry { border-color: #c0392b; }
+.rail.dlt { border-top-style: dashed; border-color: #8a4f4a; }
 .rail.terminus { border-top-style: dashed; border-color: #6b7280; }
-.rail.unverified { border-top-width: 2px; border-top-style: dotted; border-color: #64748b; opacity: .6; }
-
-/* The whole frame picks up the failure state, so it is legible from the map
-   rather than only from the panel text. */
-body.failing .dot { background: #f87171; box-shadow: 0 0 14px #f87171; }
-body.failing #progress { background: linear-gradient(90deg, #38bdf8, #f87171); }
-body.failing .timer { color: #fca5a5; }
+.rail.plumb { border-top-width: 2px; border-top-style: dashed; border-color: #7d8a74; }
+.rail.unverified { border-top-width: 2px; border-top-style: dotted; border-color: #7d8a74; opacity: .6; }
 
 @media (max-width: 760px) {
+  #panel { left: 10px; right: 10px; top: 10px; width: auto; padding: 9px 10px; }
+  #panel h2 { font-size: 14px; }
+  #panel p { font-size: 11.5px; }
   #legend { display: none; }
-  #panel { left: 12px; right: 12px; width: auto; bottom: 76px; padding: 12px; }
-  .cargo { font-size: 17px; }
-  #panel p { font-size: 12.5px; }
-  .brand h1 { font-size: 13.5px; }
+  #controls select { max-width: 110px; }
 }

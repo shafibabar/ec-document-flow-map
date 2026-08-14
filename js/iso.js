@@ -94,10 +94,115 @@ var Iso = (function () {
     return s;
   }
 
+  // -------------------------------------------------------------- solids
+  /*
+   * Primitives for building things out of, in grid units so a caller never has
+   * to think in screen pixels. Still domain-free: these know about boxes and
+   * roofs, not about services or topics.
+   *
+   * Every solid is drawn from its footprint — a diamond centred on (gx, gy)
+   * with half-extents hw, hh in grid units — extruded upward by `h` world
+   * pixels. The three visible faces are painted back to front within the solid,
+   * which is what lets the global sort treat a whole building as one drawable.
+   */
+
+  /** Lighten (+) or darken (-) a #rrggbb by an amount in 0..1. */
+  function shade(hex, amt) {
+    var n = parseInt(hex.slice(1), 16);
+    var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    var f = amt < 0 ? 0 : 255, t = amt < 0 ? -amt : amt;
+    r = Math.round(r + (f - r) * t);
+    g = Math.round(g + (f - g) * t);
+    b = Math.round(b + (f - b) * t);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  /** The four footprint corners, in screen space: north, east, south, west. */
+  function corners(gx, gy, hw, hh, canvas) {
+    return {
+      n: toScreen(gx - hw, gy - hh, canvas),
+      e: toScreen(gx + hw, gy - hh, canvas),
+      s: toScreen(gx + hw, gy + hh, canvas),
+      w: toScreen(gx - hw, gy + hh, canvas)
+    };
+  }
+
+  function poly(ctx, pts, fill) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  }
+
+  var up = function (p, h) { return { x: p.x, y: p.y - h * cam.zoom }; };
+
+  /*
+   * A box. `base` lifts the whole solid off the ground (for anything stacked on
+   * a platform), `h` is its height. Faces are shaded from one light direction so
+   * every solid on the map agrees about where the sun is.
+   */
+  function box(ctx, canvas, gx, gy, hw, hh, h, colour, base) {
+    var b = base || 0;
+    var c = corners(gx, gy, hw, hh, canvas);
+    var bn = up(c.n, b), be = up(c.e, b), bs = up(c.s, b), bw = up(c.w, b);
+    var tn = up(c.n, b + h), te = up(c.e, b + h), ts = up(c.s, b + h), tw = up(c.w, b + h);
+
+    poly(ctx, [bw, bs, ts, tw], shade(colour, -0.34));   // left face, in shadow
+    poly(ctx, [bs, be, te, ts], shade(colour, -0.16));   // right face
+    poly(ctx, [tn, te, ts, tw], shade(colour, 0.10));    // roof / top, lit
+    return { n: tn, e: te, s: ts, w: tw, cx: (tn.x + ts.x) / 2, cy: (tn.y + ts.y) / 2 };
+  }
+
+  /*
+   * A pitched roof sitting on a box: a ridge running along the grid-x axis,
+   * with two slopes falling to the eaves. This is the single detail that stops
+   * a building reading as a cardboard block.
+   */
+  function roof(ctx, canvas, gx, gy, hw, hh, base, rise, colour) {
+    var c = corners(gx, gy, hw, hh, canvas);
+    var bn = up(c.n, base), be = up(c.e, base), bs = up(c.s, base), bw = up(c.w, base);
+    var ridgeA = up(toScreen(gx - hw, gy, canvas), base + rise);
+    var ridgeB = up(toScreen(gx + hw, gy, canvas), base + rise);
+
+    poly(ctx, [bw, bs, ridgeB, ridgeA], shade(colour, -0.28));  // near slope
+    poly(ctx, [bn, be, ridgeB, ridgeA], shade(colour, 0.14));   // far slope
+    ctx.strokeStyle = shade(colour, -0.45);
+    ctx.lineWidth = Math.max(0.6, 1 * cam.zoom);
+    ctx.beginPath();
+    ctx.moveTo(ridgeA.x, ridgeA.y);
+    ctx.lineTo(ridgeB.x, ridgeB.y);
+    ctx.stroke();
+  }
+
+  /** An upright cylinder — water towers, silos, chimneys. */
+  function cylinder(ctx, canvas, gx, gy, r, h, colour, base) {
+    var b = base || 0;
+    var c = toScreen(gx, gy, canvas);
+    var rx = r * TILE_W * cam.zoom, ry = r * TILE_H * cam.zoom;
+    var by = c.y - b * cam.zoom, ty = by - h * cam.zoom;
+
+    ctx.beginPath();                                   // barrel
+    ctx.moveTo(c.x - rx, ty);
+    ctx.lineTo(c.x - rx, by);
+    ctx.ellipse(c.x, by, rx, ry, 0, Math.PI, 0, true);
+    ctx.lineTo(c.x + rx, ty);
+    ctx.closePath();
+    ctx.fillStyle = shade(colour, -0.22);
+    ctx.fill();
+
+    ctx.beginPath();                                   // lit cap
+    ctx.ellipse(c.x, ty, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = shade(colour, 0.16);
+    ctx.fill();
+  }
+
   return {
     TILE_W: TILE_W, TILE_H: TILE_H, LOOP_R: LOOP_R, cam: cam,
     toWorld: toWorld, toScreen: toScreen,
     lookAt: lookAt, glideTo: glideTo, pan: pan, zoomBy: zoomBy,
-    frame: frame, tilePath: tilePath, loopPoint: loopPoint
+    frame: frame, tilePath: tilePath, loopPoint: loopPoint,
+    shade: shade, corners: corners, poly: poly, up: up,
+    box: box, roof: roof, cylinder: cylinder
   };
 })();
