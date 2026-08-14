@@ -41,7 +41,9 @@ var Render = (function () {
     // gone wrong. Deliberately grey rather than red: not qualified is a normal
     // outcome, and colouring it like a failure would teach the wrong thing.
     terminus:     '#2a2f3a',
-    terminusEdge: '#6b7280'
+    terminusEdge: '#6b7280',
+    external:     '#1a2430',
+    externalEdge: '#3f5470'
   };
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -140,6 +142,17 @@ var Render = (function () {
     ctx.lineWidth = (track.transport === 'elastic' ? 7 : 5) * z;
     ctx.globalAlpha = active ? 1 : 0.55;
 
+    /*
+     * An edge only one end of the corpus documents. Drawn thin and faint so it
+     * is visibly weaker evidence than everything around it, rather than being
+     * dropped (which hides the gap) or drawn normally (which invents a fact).
+     */
+    if (track.unverified) {
+      ctx.setLineDash([2 * z, 7 * z]);
+      ctx.lineWidth = 2.5 * z;
+      ctx.globalAlpha = active ? 0.8 : 0.3;
+    }
+
     if (track.transport === 'retry') {
       // from === to, so there is no line to draw between two points. The rail
       // is the loop itself.
@@ -189,6 +202,7 @@ var Render = (function () {
              : stop.kind === 'depot' ? C.depot
              : stop.kind === 'siding' ? C.siding
              : stop.kind === 'terminus' ? C.terminus
+             : stop.kind === 'external' ? C.external
              : C.station;
     // A siding keeps its warning colour even when the cart is standing on it —
     // turning it the ordinary "current" blue would say the document arrived
@@ -208,6 +222,7 @@ var Render = (function () {
     ctx.strokeStyle = stop.kind === 'siding' ? C.sidingEdge
       : state === 'current' ? C.railHot
       : stop.kind === 'terminus' ? C.terminusEdge
+      : stop.kind === 'external' ? C.externalEdge
       : (state === 'visited' ? '#4b607d' : C.stationT);
     ctx.lineWidth = (state === 'current' ? 2.5 : 1.5) * z;
     roundRect(ctx, s.x - w / 2, s.y - lift - h, w, h, 7 * z);

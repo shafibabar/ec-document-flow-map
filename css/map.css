@@ -132,6 +132,7 @@ html, body {
 .rail.retry { border-color: #f87171; }
 .rail.dlt { border-top-style: dashed; border-color: #7f1d1d; }
 .rail.terminus { border-top-style: dashed; border-color: #6b7280; }
+.rail.unverified { border-top-width: 2px; border-top-style: dotted; border-color: #64748b; opacity: .6; }
 
 /* The whole frame picks up the failure state, so it is legible from the map
    rather than only from the panel text. */

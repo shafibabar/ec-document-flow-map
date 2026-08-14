@@ -59,7 +59,25 @@
     { id: 'not-qualified', name: '.not-qualified', kind: 'terminus', tech: 'Kafka', grid: { x: 4, y: 1 },
       role: 'End of the surveillance line' },
     { id: 'audit',       name: 'Centralized Audit', kind: 'station', tech: 'K8s',     grid: { x: 4, y: 0 } },
-    { id: 'audit-store', name: 'ec-audit-events',   kind: 'depot',   tech: 'MongoDB', grid: { x: 5, y: 0 } }
+    { id: 'audit-store', name: 'ec-audit-events',   kind: 'depot',   tech: 'MongoDB', grid: { x: 5, y: 0 } },
+
+    /*
+     * The rest of the estate. Every cell here comes straight from
+     * data/layout.js, which was derived from the architecture image — none of
+     * these positions is a drawing decision.
+     *
+     * They carry no scenario steps yet: they are on the map so that the estate
+     * looks like the estate, and so that the edges into and out of the walked
+     * path have somewhere real to land.
+     */
+    { id: 'manual-run',     name: 'Manual Run',            kind: 'station',  tech: 'K8s', grid: { x: 1, y: 4 } },
+    { id: 'config-curator', name: 'Config Curator',        kind: 'station',  tech: 'K8s', grid: { x: 3, y: 2 } },
+    { id: 'alerting',       name: 'Alerting',              kind: 'station',  tech: 'K8s', grid: { x: 10, y: 2 } },
+    { id: 'echo-engine',    name: 'Echo Engine',           kind: 'station',  tech: 'K8s', grid: { x: 12, y: 2 } },
+    { id: 'review-service', name: 'Review Service',        kind: 'station',  tech: 'K8s', grid: { x: 9, y: 7 } },
+    { id: 'reporting',      name: 'Reporting',             kind: 'station',  tech: 'K8s', grid: { x: 11, y: 7 } },
+    { id: 'conduct-audit',  name: 'Conduct Audit Service', kind: 'station',  tech: 'K8s', grid: { x: 12, y: 7 } },
+    { id: 'cognition',      name: 'Cognition Analytics',   kind: 'external', tech: 'external', grid: { x: 5, y: 1 } }
   ];
 
   // transport: kafka (a track) | cdc (outbox -> Debezium -> a track) | s3 (an IO spur)
@@ -104,7 +122,76 @@
     { from: 'not-qualified', to: 'audit',         transport: 'kafka',
       topic: 'ec.centralized.{tenant}.audit' },
     { from: 'audit',         to: 'audit-store',   transport: 'mongo',
-      topic: 'write -> ec-audit-events' }
+      topic: 'write -> ec-audit-events' },
+
+    /*
+     * The rest of the estate's edges. Every one of these was read from both
+     * ends — the publisher's Events Published table and the consumer's Events
+     * Consumed table — except the two marked `unverified`, which is explained
+     * where they appear below.
+     *
+     * Where an edge is `cdc`, the publisher's table correctly does NOT list the
+     * topic, because the service writes an outbox row and Debezium publishes
+     * it. That absence is the pattern, not a gap.
+     */
+    { from: 'manual-run',     to: 'gateway',        transport: 'kafka',
+      topic: 'ec.surveillance-manual-run.{tenant}.ingestion' },
+    { from: 'gateway',        to: 'filter',         transport: 'cdc',
+      topic: 'ec.surveillance-gateway.outbox.{tenant}.qualifiedCommunication' },
+
+    { from: 'config-curator', to: 'qualifier',      transport: 'kafka',
+      topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
+    { from: 'config-curator', to: 'filter',         transport: 'kafka',
+      topic: 'ec.config-curator.{tenant}.surveillance-policies' },
+    { from: 'config-curator', to: 'quota',          transport: 'kafka',
+      topic: 'ec.config-curator.{tenant}.surveillance-sampling' },
+    { from: 'config-curator', to: 'review-service', transport: 'kafka',
+      topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
+    { from: 'config-curator', to: 'reporting',      transport: 'kafka',
+      topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
+
+    /*
+     * These two edges are named only by their consumer. Config Curator's own
+     * documents never mention alert-generation-config, retention-policies (both
+     * consumed by Alerting, so one edge here) or .configuration — not in its
+     * Events Published table, and not as outbox topics either, though it does
+     * document publishing other topics that way. So the mechanism is probably
+     * the same Debezium outbox, and "probably" is exactly what this map is not
+     * allowed to draw as fact. They are marked unverified and rendered faintly
+     * rather than quietly promoted or quietly dropped: a gap someone can see is
+     * a gap someone can go and close.
+     */
+    { from: 'config-curator', to: 'alerting',       transport: 'kafka', unverified: true,
+      topic: 'ec.config-curator.{tenant}.alert-generation-config' },
+    { from: 'config-curator', to: 'echo-engine',    transport: 'kafka', unverified: true,
+      topic: 'ec.config-curator.{tenant}.configuration' },
+
+    { from: 'not-qualified',  to: 'quota',          transport: 'kafka',
+      topic: 'ec.surveillance-filter.{tenant}.not-qualified' },
+    { from: 'quota',          to: 'alerting',       transport: 'cdc',
+      topic: 'ec.surveillance-quota-manager.{tenant}.surveilled-communication-outbox' },
+    { from: 'alerting',       to: 'echo-engine',    transport: 'kafka',
+      topic: 'ec.alerting-service.{tenant}.alertedCommunication' },
+    { from: 'echo-engine',    to: 'alerting',       transport: 'kafka',
+      topic: 'ec.echo-engine.{tenant}.echoAction' },
+
+    { from: 'evaluator',      to: 'cognition',      transport: 'kafka',
+      topic: 'cognition.config.{tenant}.kafkaTopic (per-tenant)' },
+    { from: 'evaluator',      to: 'audit',          transport: 'kafka',
+      topic: 'ec.centralized.{tenant}.audit' },
+    { from: 'echo-engine',    to: 'audit',          transport: 'kafka',
+      topic: 'ec.centralized.{tenant}.audit' },
+
+    { from: 'audit',          to: 'quota',          transport: 'cdc',
+      topic: 'ec.centralised-audit.outbox.{tenant}.windowReconciliation' },
+    { from: 'audit',          to: 'reporting',      transport: 'cdc',
+      topic: 'ec.centralised-audit.outbox.{tenant}.windowReconciliation' },
+    { from: 'quota',          to: 'reporting',      transport: 'cdc',
+      topic: 'ec.surveillance-quota-manager.{tenant}.quota-windows' },
+    { from: 'quota',          to: 'manual-run',     transport: 'cdc',
+      topic: 'ec.surveillance-quota-manager.{tenant}.quota-windows' },
+    { from: 'reporting',      to: 'conduct-audit',  transport: 'kafka',
+      topic: 'conduct_audit_topic' }
   ];
 
   /*
@@ -268,10 +355,12 @@
    * document. Most traffic ends here, not in surveil.av5.
    *
    * The part worth watching is that terminal does not mean vanished. The
-   * .not-qualified topic is consumed by the filter's own AuditEventAdapter and
-   * re-published to the centralized audit topic, where Centralized Audit writes
-   * it to Mongo — so the estate keeps a record that this communication was seen
-   * and cleared, even though nothing downstream ever processes it.
+   * .not-qualified topic has two consumers, and neither of them continues the
+   * surveillance: the filter's own AuditEventAdapter re-publishes it to the
+   * centralized audit topic, where Centralized Audit writes it to Mongo, and
+   * Quota Manager's SurveilledNotQualifiedCommunicationConsumer counts it
+   * against the tenant's quota. So the estate keeps a record that this
+   * communication was seen and cleared, while nothing evaluates or indexes it.
    */
   var NOT_QUALIFIED = {
     id: 'not-qualified',
@@ -318,10 +407,11 @@
                  stamps: ['minified', 'qualified', 'evaluated', 'not-qualified'] },
         note: 'PipelineEvaluationEventPublisher puts the result on the not-qualified ' +
               'topic. Compare that with the qualified path, which goes to .evaluations ' +
-              'and on to Policy Evaluator: nothing downstream consumes .not-qualified ' +
-              'for surveillance purposes. No policy evaluation, no indexing, no entry ' +
-              'in surveil.av5 or review.v1. For most traffic in the estate, this is ' +
-              'where the journey actually ends.',
+              'and on to Policy Evaluator: no policy evaluation happens here, no ' +
+              'indexing, no entry in surveil.av5 or review.v1. Two consumers do read ' +
+              'this topic, and neither continues the surveillance — Surveillance ' +
+              'Filter\'s own AuditEventAdapter, next stop, and Quota Manager, which ' +
+              'counts it against the tenant\'s quota.',
         src: 'Surveillance Filter/EVENT_FLOW_MAP.md · Events Published #2' },
 
       { at: 'audit', via: 'ec.centralized.{tenant}.audit', dwell: 5200,
