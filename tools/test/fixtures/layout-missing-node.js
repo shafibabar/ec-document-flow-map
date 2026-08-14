@@ -33,7 +33,7 @@
       }
     },
     {
-      "id": "cognition-analytics",
+      "id": "external:cognition-analytics",
       "name": "Cognition Analytics",
       "kind": "external",
       "grid": {
@@ -52,7 +52,7 @@
       }
     },
     {
-      "id": "derived-store",
+      "id": "external:derived-store",
       "name": "Derived Store",
       "kind": "external",
       "grid": {
@@ -128,7 +128,7 @@
       }
     },
     {
-      "id": "archive",
+      "id": "external:archive",
       "name": "Archive",
       "kind": "external",
       "grid": {

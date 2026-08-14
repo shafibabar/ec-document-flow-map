@@ -40,6 +40,16 @@
  * 3 integrated systems, 4 store stops. All 2.0 components, UI Portal, EA
  * Indexing Gateway, Egress, Actioning and every outbox/token box are excluded.
  * Actioning is extracted by issue #20 but deliberately not placed.
+ *
+ * IDS ARE MERGE KEYS, NOT LABELS. Parent 2 joins these ids to the fifteen
+ * extracts, so they use the exact forms docs/MODEL_SCHEMA.md fixes and
+ * tools/validate-extract.js enforces: a service is its bare canonical slug, a
+ * store is one of `store:EA-S3`, `store:EC-S3`, `store:surveil.av5`,
+ * `store:review.v1`, and an integrated system is one of `external:archive`,
+ * `external:cognition-analytics`, `external:derived-store`. The `external:`
+ * prefix was missing here until review cycle 1 of #5; without it the merge
+ * produces two nodes for the Archive and leaves `external:archive` with no
+ * grid position, which is the failure issue #22 exists to catch across extracts.
  */
 (function (root, factory) {
   var d = factory();
@@ -56,12 +66,12 @@
       group: 'none', generation: '3.0',
       px: { x: 2626, y: 302 },
       source: { file: IMG, heading: 'top banner spanning the upper edge' } },
-    { id: 'cognition-analytics', name: 'Cognition Analytics', kind: 'external',
+    { id: 'external:cognition-analytics', name: 'Cognition Analytics', kind: 'external',
       grid: { x: 5, y: 1 },
       group: 'none', generation: 'integrated',
       px: { x: 2934, y: 686 },
       source: { file: IMG, heading: 'upper middle, above Policy Evaluator' } },
-    { id: 'derived-store', name: 'Derived Store', kind: 'external',
+    { id: 'external:derived-store', name: 'Derived Store', kind: 'external',
       grid: { x: 6, y: 1 },
       group: 'none', generation: 'integrated',
       px: { x: 3640, y: 686 },
@@ -81,7 +91,7 @@
       group: 'Actioning', generation: '3.0',
       px: { x: 9552, y: 1248 },
       source: { file: IMG, heading: 'Actioning Sub-domain frame, far upper right' } },
-    { id: 'archive', name: 'Archive', kind: 'external',
+    { id: 'external:archive', name: 'Archive', kind: 'external',
       grid: { x: 1, y: 3 },
       group: 'none', generation: 'integrated',
       px: { x: 562, y: 1538 },
