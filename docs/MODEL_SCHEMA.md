@@ -290,6 +290,24 @@ node for each of the estate's 31 DLTs.
 Parent 2 merges fifteen extracts by joining on `id`. Two agents inventing two ids
 for one thing produces two nodes on the map, so the forms are fixed:
 
+> **Enforcement of these rules across extracts is [issue #22](https://github.com/shafibabar/ec-document-flow-map/issues/22), not this validator.**
+>
+> `tools/validate-extract.js` compares an id against **its own extract's** `name`
+> and cannot see the other fourteen. Two agents each writing an internally
+> consistent id for the same topic is undetectable here by construction — review
+> cycle 5 of #4 proved this by running one trial extract both ways for zero
+> notes each time.
+>
+> The check that catches it groups every node id by normalised name across all
+> fifteen extracts and fails on any name carrying two ids. It belongs to Parent 2,
+> where the extracts exist to compare, and should be run as soon as three or four
+> are Done — the value is catching divergence while two extracts are still cheap
+> to reconcile.
+>
+> **Follow the forms below carefully anyway.** They are correct, they are what the
+> join check will hold you to, and getting them right first time is far cheaper
+> than being reconciled later.
+
 | Kind | Form | Example |
 |---|---|---|
 | `service` | the service slug, no prefix | `echo-engine` |
