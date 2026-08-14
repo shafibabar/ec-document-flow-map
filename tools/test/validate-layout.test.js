@@ -1,0 +1,402 @@
+'use strict';
+/*
+ * Tests for tools/validate-layout.js — the grid-placement gate for issue #5.
+ *
+ *     node --test "tools/test/*.test.js"
+ *
+ * Written before the validator and before data/layout.js exist.
+ *
+ * What these defend. `data/layout.js` decides where every node sits on the
+ * isometric grid, and the original brief is explicit that relative positions
+ * from the architecture image must be preserved, because the team already
+ * carries that spatial mental model. A layout that quietly re-orders the
+ * pipeline is worse than no layout: it looks authoritative and teaches the
+ * wrong shape.
+ *
+ * The `id` assertions matter for a second reason. Layout ids and extract ids
+ * must be the same strings — Parent 2 joins on them. Issue #4 spent three
+ * review cycles discovering how easily two files disagree about an id, so the
+ * canonical slug list is asserted here rather than trusted.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert');
+const { execFileSync } = require('node:child_process');
+const path = require('node:path');
+
+const fs = require('node:fs');
+
+const VALIDATOR = path.join(__dirname, '..', 'validate-layout.js');
+const EXTRACT_VALIDATOR = path.join(__dirname, '..', 'validate-extract.js');
+const LAYOUT = path.join(__dirname, '..', '..', 'data', 'layout.js');
+const FIXTURES = path.join(__dirname, 'fixtures');
+
+// The single source of the fixed node-id sets. Requiring validate-extract.js
+// runs nothing: its CLI is behind `require.main === module`.
+const { STORE_NODE_IDS, EXTERNAL_NODE_IDS } = require(EXTRACT_VALIDATOR);
+
+function run(...files) {
+  let code = 0;
+  let out;
+  try {
+    out = execFileSync('node', [VALIDATOR, ...files], { encoding: 'utf8' });
+  } catch (e) {
+    code = e.status;
+    out = (e.stdout || '') + (e.stderr || '');
+  }
+  // Strip fixture file names so assertions cannot pass on the filename alone —
+  // the flaw review cycle 2 of #4 found in seven of cycle 1's tests.
+  const diag = files.reduce((s, f) => s.split(path.basename(f)).join('<file>'), out);
+  return { code, out, diag };
+}
+
+test('the real layout passes', () => {
+  const r = run(LAYOUT);
+  assert.strictEqual(r.code, 0, `data/layout.js must be valid:\n${r.out}`);
+});
+
+// ---------------------------------------------------------------------------
+// Added in review cycle 4, by mutation testing rather than by reading.
+//
+// Disabling a validator rule one at a time and re-running this suite found two
+// rules that no test exercised: a rule could have been deleted outright and all
+// 60 tests would still have passed. Both rules worked — driving them by hand
+// caught the faults — but nothing protected them from a future refactor.
+//
+// That is the structural gap review cycle 3 was pointing at when it noted that
+// three cycles running, re-running the checks caught a fix's side effect that
+// `node --test` did not. The suite proves the validator accepts good input and
+// rejects specific bad input. It does not prove every rule is load-bearing.
+// Mutation testing is what shows that, and it is worth re-running after any
+// change to the validator:
+//
+//     disable one rule -> run this suite -> at least one test must fail
+// ---------------------------------------------------------------------------
+
+test('the same id placed twice is rejected', () => {
+  // Untested before cycle 4. Two entries claiming one id would give Parent 2
+  // two nodes to merge for one thing — the merge-key failure again, this time
+  // inside a single file rather than across two.
+  const r = run(path.join(FIXTURES, 'layout-duplicate-id.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /gateway: appears twice/, 'must name the repeated id');
+});
+
+test('non-integer grid coordinates are rejected', () => {
+  // Untested before cycle 4. The fixture seeds both failure shapes at once —
+  // a fractional x and a string y — because a rank is an index, and 7.5 or "5"
+  // means it was written by hand rather than derived from the clustering.
+  const r = run(path.join(FIXTURES, 'layout-grid-not-integer.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /indexer\.grid/, 'must name the offending node');
+  assert.match(r.diag, /integer/i, 'and say what was wrong with it');
+});
+
+test('a missing in-scope node is reported by name', () => {
+  const r = run(path.join(FIXTURES, 'layout-missing-node.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /policy-evaluator/, 'must name the id that is absent');
+  assert.match(r.diag, /missing/i);
+});
+
+test('an out-of-scope node is rejected', () => {
+  // The 2.0 components, UI Portal, EA Indexing Gateway, supervised_items and
+  // Egress are all excluded by parent #3. A layout that quietly includes one
+  // puts a node on the map that no extract will ever describe.
+  const r = run(path.join(FIXTURES, 'layout-out-of-scope.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /ingestor-service/, 'must name the offending id');
+  assert.match(r.diag, /not in scope/i);
+});
+
+test('two nodes in the same grid cell are rejected', () => {
+  const r = run(path.join(FIXTURES, 'layout-collision.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /gateway/);
+  assert.match(r.diag, /queue-qualifier/, 'must name both occupants, not just one');
+  assert.match(r.diag, /\b3\s*,\s*4\b|\(3, ?4\)/, 'and the cell they share');
+});
+
+test('the documented pipeline order must survive', () => {
+  // Gateway -> Queue Qualifier -> Surveillance Filter -> Policy Evaluator is
+  // left-to-right on the image and is the spine of the default scenario.
+  //
+  // Not a bare /surveillance-filter/ alongside /left of|order/i. The rank check
+  // added in review cycle 2 of #5 also names surveillance-filter on
+  // layout-collision.js — that fixture's mutation breaks the px-tie invariant
+  // as well as the cell — so the loose pair stopped discriminating the moment
+  // the rank check existed, and node --test said nothing because this test
+  // still passed on its own fixture. Caught by re-running cycle 1's
+  // fixture-vs-assertion cross-matrix. Assert the whole diagnostic.
+  const r = run(path.join(FIXTURES, 'layout-reordered.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag,
+    /surveillance-filter: must be to the right of queue-qualifier — the image puts them/);
+  assert.match(r.diag, /Got x=2 vs x=3/, 'and quote both ranks back');
+});
+
+test('a service id outside the canonical fifteen is rejected', () => {
+  // Layout ids and extract ids are joined by Parent 2. A layout inventing
+  // `ec-gateway` where extracts write `gateway` produces two nodes for one
+  // service — the exact failure #4 spent three cycles on.
+  const r = run(path.join(FIXTURES, 'layout-bad-slug.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /ec-gateway/, 'must quote the invalid id back');
+  // Not /gateway/, which "ec-gateway" already satisfies: assert the suggestion.
+  assert.match(r.diag, /Use "gateway"/, 'and name the canonical slug to use');
+});
+
+test('the store and external ids carry the prefixes the merge key needs', () => {
+  // Not a fixture test: an assertion about the real layout, because this is the
+  // one defect class that cannot be seen from inside either validator. Parent 2
+  // joins these ids to the fifteen extracts, and tools/validate-extract.js
+  // refuses any external node id that is not `external:`-prefixed. Review cycle
+  // 1 of #5 found the layout writing bare `archive`, `cognition-analytics` and
+  // `derived-store`, which would have merged into two nodes for the Archive
+  // with neither validator saying a word.
+  //
+  // The expected ids come from validate-extract.js rather than being restated
+  // here. That is the point of the test as of review cycle 2 of #5: with the
+  // list written out a third time, renaming `store:EA-S3` in validate-extract.js
+  // alone left this file green, validate-layout.js printing "ok", and the two
+  // gates quietly disagreeing about the merge key — the failure #22 exists to
+  // catch, in the pair of files whose job is to prevent it.
+  const layout = require(LAYOUT);
+  const ids = layout.nodes.map((n) => n.id);
+  for (const id of [...STORE_NODE_IDS, ...EXTERNAL_NODE_IDS]) {
+    assert.ok(ids.includes(id), `data/layout.js must place "${id}" under exactly that id`);
+  }
+  assert.strictEqual(STORE_NODE_IDS.length, 4, 'parent #3 fixed four store nodes');
+  assert.strictEqual(EXTERNAL_NODE_IDS.length, 3, 'and three integrated systems');
+  for (const n of layout.nodes) {
+    if (n.kind === 'store') assert.match(n.id, /^store:/, `${n.id} must carry the store: prefix`);
+    if (n.kind === 'external') assert.match(n.id, /^external:/, `${n.id} must carry the external: prefix`);
+    if (n.kind === 'service') assert.doesNotMatch(n.id, /:/, `${n.id} must be a bare slug`);
+  }
+});
+
+test('an inferred position without a reason is rejected', () => {
+  // Manual Run and Conduct Audit Service have no box on the image and are
+  // placed by inference. An inference without a stated basis is a guess.
+  const r = run(path.join(FIXTURES, 'layout-inferred-no-reason.js'));
+  assert.notStrictEqual(r.code, 0);
+  // Not a bare /reason/i alongside /manual-run/: the ordered-chain diagnostic
+  // added in review cycle 1 also names manual-run and quotes its source.reason,
+  // so that pair stopped discriminating the moment the chain existed. Assert the
+  // whole diagnostic.
+  assert.match(r.diag, /manual-run\.source: is inferred but gives no usable reason/);
+});
+
+test('the two services absent from the image are marked inferred', () => {
+  // The inverse: claiming to have read them off a diagram they do not appear on.
+  const r = run(path.join(FIXTURES, 'layout-false-provenance.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /conduct-audit-service/);
+  assert.match(r.diag, /inferred/i);
+});
+
+test('every node carries a source', () => {
+  // A bare /source/i here would pass on layout-inferred-no-reason.js and
+  // layout-false-provenance.js too, because every source diagnostic contains
+  // the token "<id>.source" — proved by cross-matrixing all ten fixtures
+  // against all nine assertion sets in review cycle 1. Name the node and the
+  // wording, or the test proves only that the validator mentioned sources.
+  const r = run(path.join(FIXTURES, 'layout-no-source.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /gateway\.source: missing/, 'must name the node with no source');
+  assert.doesNotMatch(r.diag, /inferred/i, 'and must not be the inference diagnostic instead');
+});
+
+test('group and generation are checked against the allowed sets', () => {
+  const r = run(path.join(FIXTURES, 'layout-bad-enums.js'));
+  assert.notStrictEqual(r.code, 0);
+  // Not a bare /Search Sub-domain/: the validator's group hint always ends
+  // '"Search", not "Search Sub-domain"', so that fires for any invalid group
+  // and never checks the offending value was echoed. Assert the quoting.
+  assert.match(r.diag, /"Search Sub-domain" is not valid/, 'quote the invalid group back');
+  assert.match(r.diag, /2\.0/, 'and reject 2.0, which is out of scope entirely');
+});
+
+test('a kind that contradicts its id prefix is rejected', () => {
+  // The prefix and the kind say the same thing twice. A node that joins to an
+  // extract by id and then disagrees with it about what the thing is corrupts
+  // the merge quietly, so the two are cross-checked rather than each validated
+  // alone. Both directions, because `external:` and `store:` fail differently.
+  const r = run(path.join(FIXTURES, 'layout-kind-prefix-clash.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /external:archive\.kind: "store" contradicts the id/);
+  assert.match(r.diag, /store:review\.v1\.kind: "external" contradicts the id/);
+});
+
+test('name, kind, group and generation are required, not merely checked when present', () => {
+  // docs/MODEL_SCHEMA.md marks all four Required. Until review cycle 1 of #5
+  // each was guarded by `if (x !== undefined)`, so a node stripped of all four
+  // validated clean — and a missing `kind` additionally disabled the canonical-
+  // slug check, which is gated on kind === 'service'.
+  const r = run(path.join(FIXTURES, 'layout-missing-fields.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /indexer\.name: is required/);
+  assert.match(r.diag, /indexer\.kind: is required/);
+  assert.match(r.diag, /indexer\.group: is required/);
+  assert.match(r.diag, /indexer\.generation: is required/);
+});
+
+test('a node placed off the declared board is rejected', () => {
+  // Parent 3 sizes its canvas from grid.columns/rows and iterates the board, so
+  // a negative rank or a declared size that has drifted from the data puts a
+  // node nowhere. Neither was checked before review cycle 1 of #5: `reporting`
+  // could sit at (99, 42), or the file declare 2x2 while placing (12, 7).
+  const r = run(path.join(FIXTURES, 'layout-off-board.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /store:EC-S3\.grid: \(-1, 4\) is off the board/, 'negative ranks');
+  assert.match(r.diag, /declares 13x8 but the nodes occupy 100x43/, 'and a size that lies');
+});
+
+test('the two validators share one copy of the fixed id sets', () => {
+  // Cycle 1 composed EXPECTED from local copies and recorded that "the two
+  // files cannot drift apart". They could: the composition only stopped
+  // EXPECTED drifting from those copies, and cross-file nothing compared them.
+  // The fix is one list, imported — so this asserts the import rather than
+  // asserting that two copies happen to match, which is the thing that failed.
+  const src = fs.readFileSync(VALIDATOR, 'utf8');
+  assert.match(src, /require\(['"]\.\/validate-extract\.js['"]\)/,
+    'validate-layout.js must import the id sets, not restate them');
+  assert.doesNotMatch(src, /^const (STORE_NODE_IDS|EXTERNAL_NODE_IDS|SERVICE_IDS)\s*=\s*\[/m,
+    'a second literal copy of any fixed id set is exactly the drift this closes');
+});
+
+test('a grid rank that crosses the px order is rejected', () => {
+  // data/layout.js says the grid is a RANKING of the detected centres. Nothing
+  // held it to that: alerting and echo-engine could swap cells — two boxes
+  // 1738px apart, inverted — for a clean run and fifty green tests. Cycle 1's
+  // proof that monotone clustering cannot invert is true of the data as it
+  // stood and is not a check on the next edit.
+  const r = run(path.join(FIXTURES, 'layout-rank-inversion.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /echo-engine: is left of reporting on the grid but not on the image/);
+  assert.match(r.diag, /px\.x 9552 > 8848, yet grid\.x 10 < 11/, 'quote both centres and both ranks');
+});
+
+test('px must be present, integral and inside the image', () => {
+  // px is the only machine-checkable evidence in the file and the validator did
+  // not mention it: deleting it from all 21 nodes ran clean, which would also
+  // have disabled the rank check above.
+  const r = run(path.join(FIXTURES, 'layout-px-unsound.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /centralised-audit\.px: must be \{ x, y \} integers/);
+  assert.match(r.diag, /store:EA-S3\.px: \(20000, 2154\) is outside the image, which is 10322x4746/);
+});
+
+test('an inferred node must not carry a px', () => {
+  // The mirror of a rule cycle 1 added one field over. A node drawn nowhere on
+  // the image cannot have a centre detected on it.
+  const r = run(path.join(FIXTURES, 'layout-px-on-inferred.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /manual-run\.px: is set on an inferred node/);
+});
+
+test('a non-string id is diagnosed, not dereferenced', () => {
+  // `if (!n.id)` admits 12345 and cycle 1's prefix check then called
+  // n.id.startsWith on it. The crash printed no diagnostic for any of the 21
+  // nodes — against this validator's own promise to print every problem — and
+  // exited 1, indistinguishable from a clean rejection. So assert the
+  // diagnostic, never merely the exit code.
+  const r = run(path.join(FIXTURES, 'layout-id-not-string.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.doesNotMatch(r.diag, /TypeError|is not a function/, 'must not be a crash');
+  assert.match(r.diag, /nodes\[\d+\]: id must be a non-empty string, got 12345/);
+});
+
+test('two nodes sharing a detected centre must share a rank', () => {
+  // The other half of the rank check, and the half array order decided. The
+  // walk added in review cycle 2 compares adjacent pairs of a stable sort, so a
+  // tied pair is presented in the order data/layout.js writes them and only
+  // fails when the higher rank comes first. store:EC-S3 given column 3 while
+  // gateway keeps 2 — both at px.x 1250 — was accepted as written and rejected
+  // with the two array entries swapped: the same layout, opposite verdicts.
+  // Three pairs share a centre in the real file, so half the rule the
+  // diagnostic states was unenforceable on live nodes.
+  const r = run(path.join(FIXTURES, 'layout-px-tie-split.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag,
+    /gateway: and 1 other node\(s\) share px\.x 1250 but rank differently/);
+  assert.match(r.diag, /gateway \(grid\.x 2\), store:EC-S3 \(grid\.x 3\)/,
+    'naming both nodes and both ranks');
+});
+
+test('the ranks must be dense — no empty column or row', () => {
+  // Cycle 1 made the coordinates answer to the declared board and left the
+  // declared board answering to nothing, so it could grow without limit as long
+  // as the two agreed: grid.x = 2**31 with columns 2**31+1 validated clean. A
+  // ranking produced by clustering and numbering cannot skip an index, and
+  // density bounds the board as a side effect — 21 nodes cannot span 2^31
+  // consecutive ranks.
+  const r = run(path.join(FIXTURES, 'layout-rank-gap.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /grid\.x: leaves 28 columns empty \(12, 13, 14/,
+    'must count the empty columns and sample them');
+  assert.match(r.diag, /occupied columns must be 0\.\.41 with no holes/);
+});
+
+test('provenance must name a real file and region, not merely something truthy', () => {
+  // This validator tested truthiness where validate-extract.js tests type and
+  // placeholder on the identical source object, so `{ file: 1, heading: 2 }`,
+  // whitespace and "TODO" all validated clean — and `inferred: 'yes'` fell
+  // through the strict `=== true` to the drawn branch, reading a node as
+  // measured off an image it does not appear on.
+  const r = run(path.join(FIXTURES, 'layout-source-untyped.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /gateway\.source: must name the image file and the region .* non-empty strings/);
+  assert.match(r.diag, /quota-manager\.source: names a placeholder/);
+  assert.match(r.diag, /manual-run\.source: inferred must be true or false, got "yes"/);
+});
+
+test('the 260px clustering the header claims reproduces every rank in the file', () => {
+  // data/layout.js's header is the only reason these 21 coordinates can be
+  // challenged, and it states a specific derivation: centres clustered at 260px
+  // and numbered. tools/validate-layout.js deliberately does NOT re-cluster —
+  // review cycle 2 of #5 replaced a hardcoded tolerance with monotonicity so a
+  // re-measured centre or any tolerance in the collision-free 200-270 band
+  // stays valid — which left the header's specific number resting on a sweep an
+  // agent ran once. It belongs in a test rather than in the gate: this pins the
+  // documented derivation without constraining the validator.
+  const layout = require(LAYOUT);
+  const measured = layout.nodes.filter((n) => n.px);
+  const rank = (axis, tol) => {
+    const vals = [...new Set(measured.map((n) => n.px[axis]))].sort((a, b) => a - b);
+    const out = new Map();
+    let r = 0;
+    vals.forEach((v, i) => { if (i > 0 && v - vals[i - 1] > tol) r++; out.set(v, r); });
+    return out;
+  };
+  assert.strictEqual(measured.length, 19, 'nineteen nodes are read off the image');
+  const rx = rank('x', 260);
+  const ry = rank('y', 260);
+  for (const n of measured) {
+    assert.strictEqual(n.grid.x, rx.get(n.px.x),
+      `${n.id}: grid.x must be the rank 260px clustering gives px.x ${n.px.x}`);
+    assert.strictEqual(n.grid.y, ry.get(n.px.y),
+      `${n.id}: grid.y must be the rank 260px clustering gives px.y ${n.px.y}`);
+  }
+  // And the other half of the header's claim: 280 is past the edge of the band.
+  const cells = new Set();
+  let collisions = 0;
+  for (const n of measured) {
+    const k = `${rank('x', 280).get(n.px.x)},${rank('y', 280).get(n.px.y)}`;
+    if (cells.has(k)) collisions++; else cells.add(k);
+  }
+  assert.ok(collisions > 0, 'at 280 two nodes collide — that is why 260 is the chosen tolerance');
+});
+
+test('an inferred node must sit where its own stated reason says it does', () => {
+  // Manual Run and Conduct Audit Service are the only two positions resting on
+  // an argument rather than a detected pixel. The validator used to check that
+  // the argument existed but never that the position satisfied it, so manual-run
+  // could be moved right of Gateway while still reading "upstream-left of
+  // Gateway" — an entry that looks fully sourced and is self-contradictory.
+  const r = run(path.join(FIXTURES, 'layout-inferred-wrong-side.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /manual-run/, 'must name the node whose position contradicts its reason');
+  assert.match(r.diag, /gateway/, 'and the node it is now on the wrong side of');
+  assert.match(r.diag, /Got x=2 vs x=12/);
+});
