@@ -684,25 +684,45 @@ function checkFile(file) {
   }
 }
 
-const files = process.argv.slice(2);
-if (files.length === 0) {
-  console.error('usage: node tools/validate-extract.js <extract.js> [...]');
-  process.exit(2);
-}
-files.forEach(checkFile);
+/**
+ * The three fixed id sets, exported so `tools/validate-layout.js` can use the
+ * same arrays rather than a second copy of them.
+ *
+ * Review cycle 1 of #5 composed layout's `EXPECTED` from its own local copies
+ * and recorded that "the two files cannot drift apart again". That closed the
+ * drift *inside* validate-layout.js and left the drift *between* the two files
+ * wide open: renaming `store:EA-S3` to `store:ea-s3` here alone left
+ * `node tools/validate-layout.js data/layout.js` printing "ok" and all fifty
+ * tests green — the merge-key failure #22 exists to catch, sitting in the pair
+ * of files whose job is to prevent it. One list, imported, is the only version
+ * of this that is actually true.
+ *
+ * The CLI below is behind `require.main === module` so that importing these
+ * runs nothing.
+ */
+module.exports = { SERVICE_IDS, STORE_NODE_IDS, EXTERNAL_NODE_IDS };
 
-// Advisories print whether or not the run passed — they are things to look at,
-// never reasons to stop.
-if (notes.length) {
-  console.log(`\n${notes.length} note(s):\n`);
-  notes.forEach((n) => console.log(`  ${n}`));
-  console.log('');
-}
+if (require.main === module) {
+  const files = process.argv.slice(2);
+  if (files.length === 0) {
+    console.error('usage: node tools/validate-extract.js <extract.js> [...]');
+    process.exit(2);
+  }
+  files.forEach(checkFile);
 
-if (problems.length) {
-  console.error(`\n${problems.length} problem(s) found:\n`);
-  problems.forEach((p) => console.error(`  ${p}`));
-  console.error('');
-  process.exit(1);
+  // Advisories print whether or not the run passed — they are things to look at,
+  // never reasons to stop.
+  if (notes.length) {
+    console.log(`\n${notes.length} note(s):\n`);
+    notes.forEach((n) => console.log(`  ${n}`));
+    console.log('');
+  }
+
+  if (problems.length) {
+    console.error(`\n${problems.length} problem(s) found:\n`);
+    problems.forEach((p) => console.error(`  ${p}`));
+    console.error('');
+    process.exit(1);
+  }
+  console.log(`ok — ${files.length} extract(s) conform`);
 }
-console.log(`ok — ${files.length} extract(s) conform`);

@@ -12,13 +12,35 @@
  *
  *     (173, 240, 199)  solid green   3.0 component
  *     (230, 250, 238)  pale green    sub-domain frame
- *     (231, 231, 231)  grey          2.0 component  -- all out of scope
+ *     (231, 231, 231)  grey          2.0 component  -- see the warning below
  *     (222, 218, 255)  purple        integrated system
+ *
+ * DO NOT READ THAT KEY AS "GREY MEANS OUT OF SCOPE". It said so until review
+ * cycle 2 of #5, and it is a trap that deletes four of the twenty-one nodes.
+ * The legend's colours describe *components*, and a store is not a component:
+ * all four store stops are drawn in the 2.0 grey. `EA - S3 indexable.json`,
+ * `Conduct - S3 miniindexable.json` and the `Surveil Index` / `Review Index`
+ * cylinders all fill (231, 231, 231) and all four are in scope. Grey excludes a
+ * component; it says nothing about a store.
  *
  * That produced 23 green, 16 frame, 20 grey and 6 purple components with pixel
  * bounding boxes. Each was matched to a label read from six overlapping crops of
  * the image, because text in the smaller boxes is illegible at full-image scale.
  * `px` below is the detected centre in ORIGINAL image coordinates (10322x4746).
+ * The Review Index cylinder is the one box a colour match alone will miss — JPEG
+ * shading on the cylinder body defeats a tight tolerance — so its centre was
+ * measured off a crop: (4472, 3092), confirmed twice.
+ *
+ * `name` IS THE LABEL THE MAP DRAWS, not a transcription. Six differ from the
+ * image on purpose, and they are listed here so the reading can still be
+ * re-checked against the diagram:
+ *
+ *     store:EA-S3          image: "EA - S3 indexable.json"
+ *     store:EC-S3          image: "Conduct - S3 miniindexable.json"
+ *     store:surveil.av5    image: "Surveil Index"      (the index name the
+ *     store:review.v1      image: "Review Index"        Indexer documents use)
+ *     indexer              image: "Indexer Service"
+ *     queue-qualifier      image: "Queue (Pipeline) Qualifier"
  *
  * The grid is a RANKING of those centres, not a scaling of them: x and y centres
  * were clustered with a 260px tolerance and numbered. Relative order is therefore
@@ -26,6 +48,16 @@
  * for -- the team already carries the diagram's spatial model and fighting it
  * wastes the benefit. Absolute pixel distances are deliberately NOT preserved;
  * the diagram's whitespace is an artefact of its drawing tool, not information.
+ *
+ * On the 260: review cycle 2 of #5 swept 120-420 and re-derived every rank. 260
+ * reproduces this file exactly, so the stated derivation is the one that was
+ * run. The collision-free band is 200-270; at 280 config-curator and
+ * queue-qualifier land in the same cell. 260 is therefore the most-regularised
+ * tolerance that still places every node distinctly, and it sits 10px from the
+ * edge of that band. tools/validate-layout.js does NOT re-cluster at 260 - it
+ * enforces only that the ranks never cross the px order, so a re-measured
+ * centre or a different tolerance inside the band stays valid while an
+ * inversion does not.
  *
  * The main pipeline row survives intact and legible at row 3:
  *     Archive -> Gateway -> Queue Qualifier -> Surveillance Filter

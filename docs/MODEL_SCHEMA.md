@@ -23,7 +23,10 @@ Note the quoted glob. `node --test tools/test/` does **not** work on Node 22 —
 tries to `require()` the directory as a module and fails with `MODULE_NOT_FOUND`.
 Bare `node --test` from the repo root also works but additionally discovers the
 fixture files under `tools/test/fixtures/` and counts each as a passing "test",
-reporting 65 rather than the 35 real ones. Use the glob, and expect 35.
+reporting 102 rather than the 55 real ones. Use the glob, and expect 55 — 35 for
+this schema's validator and 20 for `validate-layout.js` from issue #5. (Both
+numbers were stated as 35/65 when this was written and have gone stale twice
+since; if they disagree with what you see, trust the run, not the sentence.)
 
 ---
 

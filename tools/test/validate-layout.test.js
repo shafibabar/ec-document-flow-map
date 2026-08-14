@@ -24,9 +24,16 @@ const assert = require('node:assert');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
+const fs = require('node:fs');
+
 const VALIDATOR = path.join(__dirname, '..', 'validate-layout.js');
+const EXTRACT_VALIDATOR = path.join(__dirname, '..', 'validate-extract.js');
 const LAYOUT = path.join(__dirname, '..', '..', 'data', 'layout.js');
 const FIXTURES = path.join(__dirname, 'fixtures');
+
+// The single source of the fixed node-id sets. Requiring validate-extract.js
+// runs nothing: its CLI is behind `require.main === module`.
+const { STORE_NODE_IDS, EXTERNAL_NODE_IDS } = require(EXTRACT_VALIDATOR);
 
 function run(...files) {
   let code = 0;
@@ -76,10 +83,19 @@ test('two nodes in the same grid cell are rejected', () => {
 test('the documented pipeline order must survive', () => {
   // Gateway -> Queue Qualifier -> Surveillance Filter -> Policy Evaluator is
   // left-to-right on the image and is the spine of the default scenario.
+  //
+  // Not a bare /surveillance-filter/ alongside /left of|order/i. The rank check
+  // added in review cycle 2 of #5 also names surveillance-filter on
+  // layout-collision.js — that fixture's mutation breaks the px-tie invariant
+  // as well as the cell — so the loose pair stopped discriminating the moment
+  // the rank check existed, and node --test said nothing because this test
+  // still passed on its own fixture. Caught by re-running cycle 1's
+  // fixture-vs-assertion cross-matrix. Assert the whole diagnostic.
   const r = run(path.join(FIXTURES, 'layout-reordered.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.diag, /surveillance-filter/);
-  assert.match(r.diag, /left of|order/i, 'must say what ordering was violated');
+  assert.match(r.diag,
+    /surveillance-filter: must be to the right of queue-qualifier — the image puts them/);
+  assert.match(r.diag, /Got x=2 vs x=3/, 'and quote both ranks back');
 });
 
 test('a service id outside the canonical fifteen is rejected', () => {
@@ -101,12 +117,20 @@ test('the store and external ids carry the prefixes the merge key needs', () => 
   // 1 of #5 found the layout writing bare `archive`, `cognition-analytics` and
   // `derived-store`, which would have merged into two nodes for the Archive
   // with neither validator saying a word.
+  //
+  // The expected ids come from validate-extract.js rather than being restated
+  // here. That is the point of the test as of review cycle 2 of #5: with the
+  // list written out a third time, renaming `store:EA-S3` in validate-extract.js
+  // alone left this file green, validate-layout.js printing "ok", and the two
+  // gates quietly disagreeing about the merge key — the failure #22 exists to
+  // catch, in the pair of files whose job is to prevent it.
   const layout = require(LAYOUT);
   const ids = layout.nodes.map((n) => n.id);
-  for (const id of ['store:EA-S3', 'store:EC-S3', 'store:surveil.av5', 'store:review.v1',
-    'external:archive', 'external:cognition-analytics', 'external:derived-store']) {
+  for (const id of [...STORE_NODE_IDS, ...EXTERNAL_NODE_IDS]) {
     assert.ok(ids.includes(id), `data/layout.js must place "${id}" under exactly that id`);
   }
+  assert.strictEqual(STORE_NODE_IDS.length, 4, 'parent #3 fixed four store nodes');
+  assert.strictEqual(EXTERNAL_NODE_IDS.length, 3, 'and three integrated systems');
   for (const n of layout.nodes) {
     if (n.kind === 'store') assert.match(n.id, /^store:/, `${n.id} must carry the store: prefix`);
     if (n.kind === 'external') assert.match(n.id, /^external:/, `${n.id} must carry the external: prefix`);
@@ -189,6 +213,61 @@ test('a node placed off the declared board is rejected', () => {
   assert.notStrictEqual(r.code, 0);
   assert.match(r.diag, /store:EC-S3\.grid: \(-1, 4\) is off the board/, 'negative ranks');
   assert.match(r.diag, /declares 13x8 but the nodes occupy 100x43/, 'and a size that lies');
+});
+
+test('the two validators share one copy of the fixed id sets', () => {
+  // Cycle 1 composed EXPECTED from local copies and recorded that "the two
+  // files cannot drift apart". They could: the composition only stopped
+  // EXPECTED drifting from those copies, and cross-file nothing compared them.
+  // The fix is one list, imported — so this asserts the import rather than
+  // asserting that two copies happen to match, which is the thing that failed.
+  const src = fs.readFileSync(VALIDATOR, 'utf8');
+  assert.match(src, /require\(['"]\.\/validate-extract\.js['"]\)/,
+    'validate-layout.js must import the id sets, not restate them');
+  assert.doesNotMatch(src, /^const (STORE_NODE_IDS|EXTERNAL_NODE_IDS|SERVICE_IDS)\s*=\s*\[/m,
+    'a second literal copy of any fixed id set is exactly the drift this closes');
+});
+
+test('a grid rank that crosses the px order is rejected', () => {
+  // data/layout.js says the grid is a RANKING of the detected centres. Nothing
+  // held it to that: alerting and echo-engine could swap cells — two boxes
+  // 1738px apart, inverted — for a clean run and fifty green tests. Cycle 1's
+  // proof that monotone clustering cannot invert is true of the data as it
+  // stood and is not a check on the next edit.
+  const r = run(path.join(FIXTURES, 'layout-rank-inversion.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /echo-engine: is left of reporting on the grid but not on the image/);
+  assert.match(r.diag, /px\.x 9552 > 8848, yet grid\.x 10 < 11/, 'quote both centres and both ranks');
+});
+
+test('px must be present, integral and inside the image', () => {
+  // px is the only machine-checkable evidence in the file and the validator did
+  // not mention it: deleting it from all 21 nodes ran clean, which would also
+  // have disabled the rank check above.
+  const r = run(path.join(FIXTURES, 'layout-px-unsound.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /centralised-audit\.px: must be \{ x, y \} integers/);
+  assert.match(r.diag, /store:EA-S3\.px: \(20000, 2154\) is outside the image, which is 10322x4746/);
+});
+
+test('an inferred node must not carry a px', () => {
+  // The mirror of a rule cycle 1 added one field over. A node drawn nowhere on
+  // the image cannot have a centre detected on it.
+  const r = run(path.join(FIXTURES, 'layout-px-on-inferred.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /manual-run\.px: is set on an inferred node/);
+});
+
+test('a non-string id is diagnosed, not dereferenced', () => {
+  // `if (!n.id)` admits 12345 and cycle 1's prefix check then called
+  // n.id.startsWith on it. The crash printed no diagnostic for any of the 21
+  // nodes — against this validator's own promise to print every problem — and
+  // exited 1, indistinguishable from a clean rejection. So assert the
+  // diagnostic, never merely the exit code.
+  const r = run(path.join(FIXTURES, 'layout-id-not-string.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.doesNotMatch(r.diag, /TypeError|is not a function/, 'must not be a crash');
+  assert.match(r.diag, /nodes\[\d+\]: id must be a non-empty string, got 12345/);
 });
 
 test('an inferred node must sit where its own stated reason says it does', () => {
