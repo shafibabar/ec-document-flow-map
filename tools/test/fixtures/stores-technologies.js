@@ -22,6 +22,13 @@
       { store: "ceph",      entity: "Held/released communication objects", operations: "Hold/release", calledBy: "ObjectStoreServiceImpl", source: S },
       { store: "hazelcast", entity: "Alcatraz/property caches",         operations: "Read", calledBy: "SystemPropertiesCacheProvider", source: S },
       { store: "athena",    entity: "ec_indexable_payload_table",       operations: "query start / poll", calledBy: "AthenaQueryExecutor", source: S },
+      // alcatraz and shedlock were added to KNOWN_STORES by cycle 3's sweep of all
+      // fifteen documents — Actioning's "Alcatraz/property and service caches" and
+      // Manual Run's ShedLock — and are the two values that motivated making `store`
+      // advisory. Cycle 4's rewrite of this test did not include them, so dropping
+      // either from KNOWN_STORES left the test passing; they are covered now.
+      { store: "alcatraz",  entity: "Alcatraz/property and service caches", operations: "Read", calledBy: "SystemPropertiesCacheProvider", source: S },
+      { store: "shedlock",  entity: "Scheduled-job distributed lock",   operations: "R/W", calledBy: "ShedLock (framework-managed)", source: S },
       { store: "unknown",   entity: "A store the document names but does not identify", operations: "unknown", calledBy: "unknown", source: S }
     ],
     retries: [], decisions: [], terminalStates: [],

@@ -362,6 +362,50 @@ test('the fifteen slugs, the four store nodes and the three externals are accept
   assert.doesNotMatch(r.out, /note\(s\)/, `a conforming extract draws no notes:\n${r.out}`);
 });
 
+// ---------------------------------------------------------------------------
+// Added in review cycle 5. A Reporting trial extract written from the schema
+// alone passed clean — and its ids still did not join, because `kind` picks the
+// id prefix and nothing said how to pick `kind`.
+// ---------------------------------------------------------------------------
+
+test('a DLT consumed as an ordinary topic is still kind dlt, and the reverse', () => {
+  // The fork the validator could not see: it checked each id against the prefix
+  // implied by the kind the extractor chose, so either choice was self-consistent.
+  // Reporting reads ten of other services' DLTs as rows in a table headed
+  // `Topic Pattern`; Surveillance Filter publishes one of them as a DLT. Before
+  // this rule both extracts validated clean carrying different ids for one topic.
+  const r = run(path.join(FIXTURES, 'consumed-dlt-kind.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /nodes\[0\]\.id.*ends in "-dlt".*kind "dlt"/s,
+    'a -dlt name must be classified dlt however it is used');
+  assert.match(r.diag, /nodes\[0\]\.id.*merely consume is still a dead-letter topic/s,
+    'and the message must say why, since consuming one feels like an ordinary read');
+  assert.match(r.diag, /nodes\[1\]\.id.*does not end in "-dlt".*kind "topic"/s,
+    'the rule must bind in both directions or it only moves the fork');
+});
+
+test('a retry topic is not a node, even as an Events Consumed row', () => {
+  // Stated since cycle 1, enforced by nothing. Echo Engine never tested it: its
+  // retry topics live in a retry section. Reporting's are Events Consumed rows
+  // with their own consumer groups, which is where nodes get made.
+  const r = run(path.join(FIXTURES, 'retry-topic-node.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /nodes\[0\]\.id.*is a retry topic, which is not a node/s);
+  assert.match(r.diag, /retries\[\]\.retryTopics/, 'and must name where it does belong');
+});
+
+test('an id built from a template or a mermaid placeholder is surfaced', () => {
+  // A note, not a failure: the extractor is recording what the document says,
+  // and Reporting's Events Published rows 7-8 genuinely give only a template.
+  const r = run(path.join(FIXTURES, 'templated-topic-id.js'));
+  assert.strictEqual(r.code, 0, `the shape is legal:\n${r.out}`);
+  assert.match(r.diag, /nodes\[0\]\.id.*\{base-topic\}.*joins to nothing/s);
+  assert.match(r.diag, /nodes\[1\]\.id.*TENANT.*joins to nothing/s,
+    'the mermaid-only TENANT form forks the estate\'s most shared topic');
+  assert.match(r.diag, /table is authoritative/,
+    'and the message must say which form to prefer');
+});
+
 test('the real worked example conforms', () => {
   const r = run(path.join(__dirname, '..', '..', 'data', 'extracted', '_example.js'));
   assert.strictEqual(r.code, 0, `the example other agents copy must be valid:\n${r.out}`);

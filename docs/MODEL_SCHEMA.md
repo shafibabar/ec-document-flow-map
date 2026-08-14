@@ -23,7 +23,7 @@ Note the quoted glob. `node --test tools/test/` does **not** work on Node 22 —
 tries to `require()` the directory as a module and fails with `MODULE_NOT_FOUND`.
 Bare `node --test` from the repo root also works but additionally discovers the
 fixture files under `tools/test/fixtures/` and counts each as a passing "test",
-reporting 59 rather than the 32 real ones. Use the glob, and expect 32.
+reporting 65 rather than the 35 real ones. Use the glob, and expect 35.
 
 ---
 
@@ -248,6 +248,43 @@ Record topics and DLTs as nodes. **These are not nodes:**
 - **Retry topics.** They live in `retries[].retryTopics`. Only the DLT gets a
   node, because the DLT is where a document's journey visibly ends.
 
+  This holds **wherever you meet them**, which is the part that catches people
+  out. Retry topics are not always tucked inside a retry section: Reporting's are
+  `Events Consumed` rows with their own consumer groups
+  (`ec.reporting.event-log.retry-0.consumer-group`) and `Events Published` rows
+  with their own triggers, and Centralized Audit publishes five more the same
+  way. Those rows still produce **no node and therefore no edge**. Record the
+  topic name, the consumer group and the trigger in the matching `retries[]`
+  entry — nothing is lost, and the retry fan-out is drawn from `retries[]`.
+- **Topic names that are templates.** Reporting's `Events Published` rows 7 and 8
+  give the `@RetryableTopic` names only as `{base-topic}-ec-reporting-retry-{0..N}`
+  and `{base-topic}-ec-reporting-dlt`; Centralized Audit has
+  `…cognition-reconciliation-events-retry-*`. A template is not a name: an id
+  built from one joins to nothing, and expanding it invents names your document
+  does not contain. Create **no node**; write the row into `retries[]` verbatim
+  plus an `ambiguities` entry.
+
+#### `topic` or `dlt`? The name decides, not your vantage point
+
+`kind` chooses the id prefix, so it cannot be a judgement call — if two agents
+classify one topic differently they produce two merge keys for it.
+
+**A topic whose `name` ends in `-dlt` is `kind: 'dlt'`. Every other topic node is
+`kind: 'topic'`.** That is the whole rule, and the validator enforces it both
+ways. All 47 `-dlt`-suffixed names in the corpus are dead-letter topics, no
+dead-letter topic lacks the suffix, and "DLQ" appears nowhere.
+
+**A dead-letter topic you merely consume is still a dead-letter topic.** This is
+the half that is easy to get wrong. Reporting's
+`EventLogConsumer — Full Topic Pattern List` is a table headed `Topic Pattern`
+whose rows 2–11 are ten *other* services' DLTs, read as an ordinary data source
+and sitting beside `ec.centralized.{tenant}.audit` in row 1; Centralized Audit
+reads thirteen the same way. Meanwhile Surveillance Filter publishes
+`ec.surveillance-gateway.outbox.{tenant}.qualifiedCommunication-dlt` under
+`Events Published` and will record it as a DLT. Classify by the suffix and all
+three agree; classify by what the topic means to *you* and the map grows a second
+node for each of the estate's 31 DLTs.
+
 #### `id` conventions — this is the merge key
 
 Parent 2 merges fifteen extracts by joining on `id`. Two agents inventing two ids
@@ -291,12 +328,34 @@ Deriving from the name makes the join mechanical: two agents looking at the same
 topic write the same id without knowing anything about each other's document, and
 `retries[].dltTarget` joins to its `dlt` node by construction.
 
-**Tenant placeholder normalisation — in the `id` only.** The corpus writes the
-tenant placeholder six ways. Inside an `id`, rewrite `<tenant>`, `{t}`,
-`{tenantName}`, `{tenantId}` and `%s` to **`{tenant}`**. Everything else in the
-name is kept character for character. `name` always keeps the document's literal
-text, placeholder and all — the normalisation exists so the merge key is stable,
-not to correct the document, and `tenancy[]` is where the difference is recorded.
+**Tenant placeholder normalisation — in the `id` only.** Inside an `id`, rewrite
+`<tenant>`, `{t}` and `%s` to **`{tenant}`**. Everything else in the name is kept
+character for character. `name` always keeps the document's literal text,
+placeholder and all — the normalisation exists so the merge key is stable, not to
+correct the document, and `tenancy[]` is where the difference is recorded.
+
+These are the forms that actually occur **inside a topic name**, swept across all
+33 documents:
+
+| Form | Occurrences | Where |
+|---|---|---|
+| `{tenant}` | 209 | most documents |
+| `{t}` | 67 | stop_info files mostly |
+| `<tenant>` | 20 | Echo Engine |
+| `%s` | 4 | Policy Evaluator prose |
+| `TENANT` | 2 | Policy Evaluator mermaid participant only |
+| `*` | 1 | Reporting / Indexer mermaid only |
+
+`{tenantName}` and `{tenantId}` are **REST path** placeholders — Reporting's
+inbound paths use the first and its outbound path the second — and never appear
+in a topic name. Do not normalise a path; only ids are normalised, and no id is
+built from a path.
+
+`TENANT` and `*` are deliberately **not** normalised, because treating an
+unbraced word as a placeholder means guessing. Both occur only in mermaid labels
+for topics that a table names properly elsewhere, so: **when a topic is named in
+both a table and a mermaid label, the table is authoritative.** The validator
+notes an id still carrying either.
 
 Ids are long. That is the correct trade: an id is a key, not a label, and
 `name` and `displayName` are what the map draws.
@@ -624,8 +683,30 @@ substitutes for it.
 | A conflict has ≥ 2 readings, each with a value and a source | `conflict has 1 reading(s)` |
 | The extract is plain, serialisable data | `nodes[0].itself: is a circular reference` |
 
+| A `topic` node whose name ends `-dlt`, or a `dlt` node whose name does not | `"…-dlt" ends in "-dlt", so this node is kind "dlt"` |
+| A retry topic recorded as a node | `"…-retry-0" is a retry topic, which is not a node` |
+| An id still carrying a template placeholder or wildcard (a **note**) | `"{base-topic}-ec-reporting-dlt" still carries an unresolved placeholder` |
+
 Every problem in a run is reported, with file, entity type and index. It never
 stops at the first, and a broken entry never costs you the report on the rest.
+
+### What this validator structurally cannot check — for Parent 2
+
+It compares each id against **its own extract's** `name`. It has no access to the
+other fourteen extracts, so a fork in which two agents write two internally
+consistent ids for one topic is invisible to it *by construction*. Review cycle 5
+demonstrated this: a Reporting extract and a Surveillance Filter extract
+disagreeing about ten DLT ids both validate clean with zero notes.
+
+The rules above close every fork found so far by making the id computable from
+the topic's own name — both the prefix and the body. But the general check is
+cheap and belongs to the merge, where the evidence finally exists:
+
+> **Collect every node id from the fifteen extracts, group by the normalised
+> `name`, and fail on any name carrying more than one id.**
+
+One rule, and it catches every fork of this shape including ones nobody has
+thought of yet. Parent 2 should run it before merging anything.
 
 ---
 
@@ -644,6 +725,12 @@ stops at the first, and a broken entry never costs you the report on the rest.
 - [ ] Every topic and DLT id is `topic:`/`dlt:` + that node's own `name` with the
       tenant placeholder normalised to `{tenant}` — not the producer, not a
       shortened segment
+- [ ] `kind` is `dlt` for every node whose name ends `-dlt` and `topic` for every
+      other topic node — including DLTs you only consume
+- [ ] No retry topic is a node, wherever you met it — including as an Events
+      Consumed or Events Published row with its own consumer group
+- [ ] No node has a templated name (`{base-topic}-…`, `…-retry-*`); those are
+      `retries[]` rows plus an ambiguity
 - [ ] Every cross-service id is one of the fifteen slugs, not the name your
       document happens to use for it (`ec-gateway` → `gateway`,
       `Pipeline Qualifier` → `queue-qualifier`)

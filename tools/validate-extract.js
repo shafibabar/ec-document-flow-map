@@ -163,8 +163,54 @@ const SERVICE_ALIASES = {
   'ec-actioning': 'actioning'
 };
 
-/** Tenant placeholders the corpus uses, all normalised to `{tenant}` in an id. */
+/**
+ * Tenant placeholders the corpus uses, all normalised to `{tenant}` in an id.
+ *
+ * Inside a *topic name* the corpus writes only `{tenant}` (209), `{t}` (67),
+ * `<tenant>` (20), `%s` (4), plus two mermaid-only oddities handled separately
+ * below. `tenantname`/`tenantid` are REST *path* placeholders — they never
+ * appear in a topic name — and are kept here defensively rather than because a
+ * topic needs them.
+ */
 const TENANT_TOKENS = ['tenant', 't', 'tenantname', 'tenantid', 'tenant_name'];
+
+/**
+ * A dead-letter topic is one whose name ends `-dlt`. That is the whole rule.
+ *
+ * `kind` decides the id prefix, so leaving `kind` to the extractor's judgement
+ * forks the merge key — and the fork is invisible here, because the id is then
+ * checked against the prefix that same judgement chose. Reporting reads ten of
+ * other services' DLTs as ordinary rows in a table headed `Topic Pattern`, and
+ * Centralized Audit reads thirteen, while the services that publish them record
+ * them as DLTs. One topic, two ids, both self-consistent.
+ *
+ * Verified across all 33 documents before being relied on: all 47 `-dlt`
+ * suffixed names are dead-letter topics, no dead-letter topic lacks the suffix,
+ * and "DLQ" appears nowhere in the corpus.
+ */
+const DLT_SUFFIX = /-dlt$/;
+
+/**
+ * Retry topics are not nodes — they live in `retries[].retryTopics`.
+ *
+ * Stated in the schema since cycle 1 and never enforced, which only became
+ * visible with Reporting: its retry topics are Events Consumed rows carrying
+ * their own consumer groups and Events Published rows carrying their own
+ * triggers, not lines in a retry section, so an extractor meets them in exactly
+ * the place that otherwise produces a node.
+ */
+const RETRY_SEGMENT = /-retry-(\d+|\*|\{[^}]*\})$/;
+
+/**
+ * A placeholder in a topic name that is not the tenant one, or a wildcard.
+ *
+ * `{base-topic}-ec-reporting-dlt` (Reporting, Events Published rows 7-8) and
+ * `…cognition-reconciliation-events-retry-*` (Centralized Audit) are templates,
+ * not names. An id built from one joins to nothing; expanding it invents names
+ * the document does not contain. Neither is acceptable, so such a topic gets no
+ * node at all.
+ */
+const UNRESOLVED_TOKEN = /\{(?!tenant\})[^}]*\}|(^|[.\-_])\*($|[.\-_])|(^|\.)TENANT(\.|$)/;
 
 /**
  * The id form a topic or DLT node's own `name` implies.
@@ -353,7 +399,48 @@ function checkNodeId(file, where, entry) {
 
   if ((kind === 'topic' || kind === 'dlt') && typeof name === 'string'
       && name.trim() !== '' && name.trim().toLowerCase() !== 'unknown') {
-    const expected = prefix + normaliseTenant(name).trim();
+    const bareName = name.trim();
+
+    // `kind` picks the prefix, so it cannot be a judgement call: two agents
+    // reading one topic must reach one kind. The name decides it.
+    if (kind === 'topic' && DLT_SUFFIX.test(bareName)) {
+      fail(file, `${where}.id`,
+        `"${bareName}" ends in "-dlt", so this node is kind "dlt" and its id is ` +
+        `"dlt:${normaliseTenant(bareName)}", not "${id}". A dead-letter topic you ` +
+        'merely consume is still a dead-letter topic — Reporting reads ten of them as ' +
+        'ordinary rows and the services that publish them record them as DLTs, so ' +
+        'classifying by your own vantage point puts two nodes on the map for one topic.');
+      return;
+    }
+    if (kind === 'dlt' && !DLT_SUFFIX.test(bareName)) {
+      fail(file, `${where}.id`,
+        `"${bareName}" does not end in "-dlt", so this node is kind "topic" and its id ` +
+        `is "topic:${normaliseTenant(bareName)}", not "${id}".`);
+      return;
+    }
+
+    // Retry topics are not nodes at all. Reporting meets them as Events
+    // Consumed rows with their own consumer groups, which is exactly where a
+    // node would otherwise be created.
+    if (RETRY_SEGMENT.test(bareName)) {
+      fail(file, `${where}.id`,
+        `"${bareName}" is a retry topic, which is not a node. Record it in ` +
+        'retries[].retryTopics — with its consumer group and trigger — and create no ' +
+        'node and no edge. Only the DLT gets a node, because the DLT is where a ' +
+        "document's journey visibly ends.");
+      return;
+    }
+
+    // A template is not a name.
+    if (UNRESOLVED_TOKEN.test(bareName)) {
+      notes.push(`${path.basename(file)}: ${where}.id: "${bareName}" still carries an ` +
+        'unresolved placeholder or wildcard, so this id joins to nothing. If the document ' +
+        'gives only a template ({base-topic}-…, …-retry-*), create no node: record the row ' +
+        'in retries[] verbatim plus an ambiguity. If a mermaid label gave TENANT or *, ' +
+        'prefer the tabular form of the name — the table is authoritative.');
+    }
+
+    const expected = prefix + normaliseTenant(bareName);
     if (id !== expected) {
       notes.push(`${path.basename(file)}: ${where}.id: is "${id}"; the id derived from this ` +
         `node's own name is "${expected}". The id is the merge key and is derived from the ` +
