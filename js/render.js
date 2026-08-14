@@ -14,6 +14,7 @@
  *   elastic  thick spur into a yard
  *   retry    a loop siding back into the same station, in warning red
  *   dlt      a short dead end with a buffer stop; nothing leaves it
+ *   mongo    thin spur to a document store
  */
 var Render = (function () {
 
@@ -35,7 +36,12 @@ var Render = (function () {
     railDead:    '#6b3340',
     railDeadHot: '#f87171',
     siding:      '#3b1d24',
-    sidingEdge:  '#7f1d1d'
+    sidingEdge:  '#7f1d1d',
+    // A terminus is where the surveillance line ends without anything having
+    // gone wrong. Deliberately grey rather than red: not qualified is a normal
+    // outcome, and colouring it like a failure would teach the wrong thing.
+    terminus:     '#2a2f3a',
+    terminusEdge: '#6b7280'
   };
 
   function roundRect(ctx, x, y, w, h, r) {
@@ -91,14 +97,19 @@ var Render = (function () {
     }
   }
 
-  /** A buffer stop: the barrier at the end of a dead-end siding. */
-  function drawBufferStop(ctx, canvas, stop) {
+  /*
+   * A buffer stop: the barrier that says a line ends here. Solid red on a DLT,
+   * where the document is stuck for good; dashed grey on a terminus, where the
+   * surveillance line ends but a record still travels on.
+   */
+  function drawBufferStop(ctx, canvas, stop, colour, dashed) {
     var s = Iso.toScreen(stop.grid.x, stop.grid.y, canvas);
     var z = Iso.cam.zoom;
     ctx.save();
-    ctx.strokeStyle = C.sidingEdge;
+    ctx.strokeStyle = colour;
     ctx.lineWidth = 4 * z;
     ctx.lineCap = 'round';
+    if (dashed) ctx.setLineDash([5 * z, 4 * z]);
     ctx.beginPath();
     ctx.moveTo(s.x - 22 * z, s.y - 10 * z);
     ctx.lineTo(s.x + 22 * z, s.y - 10 * z);
@@ -117,7 +128,7 @@ var Render = (function () {
     ctx.save();
     if (track.transport === 'cdc') {
       ctx.setLineDash([10 * z, 8 * z]);
-    } else if (track.transport === 's3') {
+    } else if (track.transport === 's3' || track.transport === 'mongo') {
       ctx.setLineDash([3 * z, 6 * z]);
     } else if (track.transport === 'dlt') {
       ctx.setLineDash([7 * z, 5 * z]);
@@ -177,6 +188,7 @@ var Render = (function () {
     var body = stop.kind === 'yard' ? C.yard
              : stop.kind === 'depot' ? C.depot
              : stop.kind === 'siding' ? C.siding
+             : stop.kind === 'terminus' ? C.terminus
              : C.station;
     // A siding keeps its warning colour even when the cart is standing on it —
     // turning it the ordinary "current" blue would say the document arrived
@@ -195,6 +207,7 @@ var Render = (function () {
 
     ctx.strokeStyle = stop.kind === 'siding' ? C.sidingEdge
       : state === 'current' ? C.railHot
+      : stop.kind === 'terminus' ? C.terminusEdge
       : (state === 'visited' ? '#4b607d' : C.stationT);
     ctx.lineWidth = (state === 'current' ? 2.5 : 1.5) * z;
     roundRect(ctx, s.x - w / 2, s.y - lift - h, w, h, 7 * z);
@@ -207,8 +220,9 @@ var Render = (function () {
       ctx.fill();
     }
 
-    // A siding gets the buffer stop that makes it read as a dead end.
-    if (stop.kind === 'siding') drawBufferStop(ctx, canvas, stop);
+    // Both kinds of end-of-line get a buffer stop, told apart by its weight.
+    if (stop.kind === 'siding') drawBufferStop(ctx, canvas, stop, C.sidingEdge, false);
+    if (stop.kind === 'terminus') drawBufferStop(ctx, canvas, stop, C.terminusEdge, true);
 
     ctx.textAlign = 'center';
     ctx.fillStyle = C.text;

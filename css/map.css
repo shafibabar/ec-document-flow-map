@@ -128,8 +128,10 @@ html, body {
 .rail.cdc { border-top-style: dashed; border-color: #7dd3fc; }
 .rail.elastic { border-top-width: 5px; border-color: #4ade80; }
 .rail.s3 { border-top-style: dotted; border-color: #94a3b8; }
+.rail.mongo { border-top-style: dotted; border-color: #818cf8; }
 .rail.retry { border-color: #f87171; }
 .rail.dlt { border-top-style: dashed; border-color: #7f1d1d; }
+.rail.terminus { border-top-style: dashed; border-color: #6b7280; }
 
 /* The whole frame picks up the failure state, so it is legible from the map
    rather than only from the panel text. */

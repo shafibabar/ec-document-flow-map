@@ -18,6 +18,7 @@
 
   // kind: station (a K8s service) | yard (Elasticsearch) | depot (S3 / Mongo)
   //     | siding (a dead-end topic — a DLT, where a document stops for good)
+  //     | terminus (the surveillance line ends, but a record carries on)
   var STOPS = [
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
     { id: 'gateway',    name: 'Gateway',             kind: 'station', tech: 'K8s',           grid: { x: 2, y: 3 } },
@@ -41,7 +42,24 @@
      * should look like. The topic itself is real; only where it sits is chosen.
      */
     { id: 'qualifier-dlt', name: '{topic}-dlt', kind: 'siding', tech: 'Kafka', grid: { x: 3, y: 5 },
-      role: 'Dead Letter Topic' }
+      role: 'Dead Letter Topic' },
+
+    /*
+     * The not-qualified branch. A terminus, not a siding: the document stops
+     * being surveilled, but an audit record carries on to Centralized Audit and
+     * is written to Mongo. Drawing it in the DLT's red would say something went
+     * wrong, and nothing did — not matching a flag policy is a normal, correct
+     * outcome for most traffic.
+     *
+     * centralised-audit takes its cell straight from data/layout.js. The other
+     * two are Kafka topics and a Mongo collection, which the architecture image
+     * does not place, so (4,1) and (5,0) are chosen — both free in that layout,
+     * both keeping the branch on one clean line up from the filter.
+     */
+    { id: 'not-qualified', name: '.not-qualified', kind: 'terminus', tech: 'Kafka', grid: { x: 4, y: 1 },
+      role: 'End of the surveillance line' },
+    { id: 'audit',       name: 'Centralized Audit', kind: 'station', tech: 'K8s',     grid: { x: 4, y: 0 } },
+    { id: 'audit-store', name: 'ec-audit-events',   kind: 'depot',   tech: 'MongoDB', grid: { x: 5, y: 0 } }
   ];
 
   // transport: kafka (a track) | cdc (outbox -> Debezium -> a track) | s3 (an IO spur)
@@ -79,7 +97,14 @@
     { from: 'qualifier', to: 'qualifier',     transport: 'retry',
       topic: '{topic}-retry-0 / {topic}-retry-1' },
     { from: 'qualifier', to: 'qualifier-dlt', transport: 'dlt',
-      topic: '{topic}-dlt' }
+      topic: '{topic}-dlt' },
+
+    { from: 'filter',        to: 'not-qualified', transport: 'kafka',
+      topic: 'ec.surveillance-filter.{tenant}.not-qualified' },
+    { from: 'not-qualified', to: 'audit',         transport: 'kafka',
+      topic: 'ec.centralized.{tenant}.audit' },
+    { from: 'audit',         to: 'audit-store',   transport: 'mongo',
+      topic: 'write -> ec-audit-events' }
   ];
 
   /*
@@ -233,5 +258,94 @@
     ]
   };
 
-  return { stops: STOPS, tracks: TRACKS, scenarios: [HAPPY, RETRY] };
+  /*
+   * The not-qualified walk. The document is ingested and qualified normally,
+   * then Surveillance Filter evaluates it and decides it is not flagged for
+   * review. That ends its surveillance journey — it never reaches Policy
+   * Evaluator, never gets indexed, never appears in either Elasticsearch yard.
+   *
+   * This is the scenario that stops the map being a story about one lucky
+   * document. Most traffic ends here, not in surveil.av5.
+   *
+   * The part worth watching is that terminal does not mean vanished. The
+   * .not-qualified topic is consumed by the filter's own AuditEventAdapter and
+   * re-published to the centralized audit topic, where Centralized Audit writes
+   * it to Mongo — so the estate keeps a record that this communication was seen
+   * and cleared, even though nothing downstream ever processes it.
+   */
+  var NOT_QUALIFIED = {
+    id: 'not-qualified',
+    name: 'Terminal state — not qualified',
+    steps: [
+      { at: 'ea-s3', dwell: 2200,
+        title: 'Raw communication lands',
+        cargo: { label: 'indexable.json', tint: '#94a3b8', stamps: [] },
+        note: 'The same start as every other scenario. A BulkIndexEvent pointing at a ' +
+              'document in the EA S3 bucket is published to supBulkIndexingTopic_k8s.',
+        src: 'Gateway/EVENT_FLOW_MAP.md · Events Consumed' },
+
+      { at: 'gateway', via: 'supBulkIndexingTopic_k8s', dwell: 3600,
+        title: 'Ingested and minified',
+        cargo: { label: 'miniIndexable.json', tint: '#38bdf8', stamps: ['minified', 'outboxed'] },
+        note: 'Gateway minifies the document, re-uploads it and writes an ' +
+              'IngestedCommunicationOutbox row. Debezium publishes it — Gateway never ' +
+              'emits the event itself.',
+        src: 'Gateway/ec-gateway_stop_info.md · Transformation' },
+
+      { at: 'qualifier', via: 'outbox -> Debezium', dwell: 3800,
+        title: 'Qualified against pipelines',
+        cargo: { label: 'QualifiedCommunicationDto', tint: '#22d3ee', stamps: ['minified', 'qualified'] },
+        note: 'Queue Qualifier matches the communication against the tenant\'s ' +
+              'surveillance pipelines and finds at least one, so it travels on. With ' +
+              'zero matches it would have been routed straight to audit from here ' +
+              'instead — a different terminal state, one stop earlier.',
+        src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Published #1, #2' },
+
+      { at: 'filter', via: 'ec.surveillance-qualifier.{tenant}.qualifications', dwell: 5400,
+        title: 'Evaluated — and not flagged',
+        cargo: { label: 'PipelineEvaluationEvent', tint: '#fbbf24',
+                 stamps: ['minified', 'qualified', 'evaluated'] },
+        note: 'Surveillance Filter runs two phases against locally cached config. The ' +
+              'Ignore phase passes — no ignore rule matches, so the document is not ' +
+              'discarded. The Filter phase then finds no flag policy that matches ' +
+              'either, which is the NOT_QUALIFIED result. Nothing failed here: this is ' +
+              'the engine deciding the communication does not need review.',
+        src: 'Surveillance Filter/ec-surveillance-filter_stop_info.md · Decisions' },
+
+      { at: 'not-qualified', via: 'ec.surveillance-filter.{tenant}.not-qualified', dwell: 5000,
+        title: 'The surveillance line ends',
+        cargo: { label: 'NOT_QUALIFIED result', tint: '#a3a3a3',
+                 stamps: ['minified', 'qualified', 'evaluated', 'not-qualified'] },
+        note: 'PipelineEvaluationEventPublisher puts the result on the not-qualified ' +
+              'topic. Compare that with the qualified path, which goes to .evaluations ' +
+              'and on to Policy Evaluator: nothing downstream consumes .not-qualified ' +
+              'for surveillance purposes. No policy evaluation, no indexing, no entry ' +
+              'in surveil.av5 or review.v1. For most traffic in the estate, this is ' +
+              'where the journey actually ends.',
+        src: 'Surveillance Filter/EVENT_FLOW_MAP.md · Events Published #2' },
+
+      { at: 'audit', via: 'ec.centralized.{tenant}.audit', dwell: 5200,
+        title: 'But the record carries on',
+        cargo: { label: 'PipelineEvaluationEvent (headers only)', tint: '#818cf8',
+                 stamps: ['minified', 'qualified', 'evaluated', 'not-qualified', 'audited'] },
+        note: 'Terminal does not mean vanished. AuditEventAdapter — a consumer inside ' +
+              'Surveillance Filter itself — reads the not-qualified topic straight back ' +
+              'and re-publishes it to the centralized audit topic, headers only. The ' +
+              'body is dropped; what survives is the fact that this communication was ' +
+              'seen, evaluated and cleared. Centralized Audit consumes it as a primary ' +
+              'audit event from the surveillance pipeline.',
+        src: 'Surveillance Filter/EVENT_FLOW_MAP.md · Events Published #4' },
+
+      { at: 'audit-store', via: 'write -> ec-audit-events', dwell: 4200, terminal: true,
+        title: 'Filed',
+        cargo: { label: 'AuditEvent', tint: '#c7d2fe',
+                 stamps: ['minified', 'qualified', 'evaluated', 'not-qualified', 'audited', 'filed'] },
+        note: 'CommunicationEventService writes the audit event to the ec-audit-events ' +
+              'collection in MongoDB. That row is the estate\'s entire memory of this ' +
+              'document — proof it passed through and was judged not to need review.',
+        src: 'Centralized Audit/EVENT_FLOW_MAP.md · Persistent Store Interactions #1' }
+    ]
+  };
+
+  return { stops: STOPS, tracks: TRACKS, scenarios: [HAPPY, RETRY, NOT_QUALIFIED] };
 });
