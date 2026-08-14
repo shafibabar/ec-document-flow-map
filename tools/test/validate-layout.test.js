@@ -55,6 +55,43 @@ test('the real layout passes', () => {
   assert.strictEqual(r.code, 0, `data/layout.js must be valid:\n${r.out}`);
 });
 
+// ---------------------------------------------------------------------------
+// Added in review cycle 4, by mutation testing rather than by reading.
+//
+// Disabling a validator rule one at a time and re-running this suite found two
+// rules that no test exercised: a rule could have been deleted outright and all
+// 60 tests would still have passed. Both rules worked — driving them by hand
+// caught the faults — but nothing protected them from a future refactor.
+//
+// That is the structural gap review cycle 3 was pointing at when it noted that
+// three cycles running, re-running the checks caught a fix's side effect that
+// `node --test` did not. The suite proves the validator accepts good input and
+// rejects specific bad input. It does not prove every rule is load-bearing.
+// Mutation testing is what shows that, and it is worth re-running after any
+// change to the validator:
+//
+//     disable one rule -> run this suite -> at least one test must fail
+// ---------------------------------------------------------------------------
+
+test('the same id placed twice is rejected', () => {
+  // Untested before cycle 4. Two entries claiming one id would give Parent 2
+  // two nodes to merge for one thing — the merge-key failure again, this time
+  // inside a single file rather than across two.
+  const r = run(path.join(FIXTURES, 'layout-duplicate-id.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /gateway: appears twice/, 'must name the repeated id');
+});
+
+test('non-integer grid coordinates are rejected', () => {
+  // Untested before cycle 4. The fixture seeds both failure shapes at once —
+  // a fractional x and a string y — because a rank is an index, and 7.5 or "5"
+  // means it was written by hand rather than derived from the clustering.
+  const r = run(path.join(FIXTURES, 'layout-grid-not-integer.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /indexer\.grid/, 'must name the offending node');
+  assert.match(r.diag, /integer/i, 'and say what was wrong with it');
+});
+
 test('a missing in-scope node is reported by name', () => {
   const r = run(path.join(FIXTURES, 'layout-missing-node.js'));
   assert.notStrictEqual(r.code, 0);
