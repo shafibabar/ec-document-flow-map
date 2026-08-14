@@ -16,68 +16,89 @@
   else root.EC_FLOW = d;
 })(typeof self !== 'undefined' ? self : this, function () {
 
-  // kind: station (a K8s service) | yard (Elasticsearch) | depot (S3 / Mongo)
-  //     | siding (a dead-end topic — a DLT, where a document stops for good)
-  //     | terminus (the surveillance line ends, but a record carries on)
+  /*
+   * ---------------------------------------------------------------------------
+   * Positions are a RAILWAY layout, not the architecture image's layout.
+   * ---------------------------------------------------------------------------
+   *
+   * data/layout.js remains the provenance record: it holds where each service
+   * sits on "Enterprise Conduct V3 - TSA.jpg", derived by colour-detecting every
+   * box, and it is not changed by any of this. But an architecture diagram is
+   * drawn to show grouping, and a railway map is drawn to show a journey. Laying
+   * the stops out on the image's coordinates produced 32 edge crossings and 25
+   * rails running through the middle of a station they had nothing to do with —
+   * one of them straight through Queue Qualifier — which made the transitions
+   * impossible to follow.
+   *
+   * The projection in js/iso.js has exactly four directions that read as clean
+   * straight lines, and everything here is built out of them:
+   *
+   *   same y, +x     down-right on screen   the main line
+   *   same x, +y     down-left on screen    branches off it
+   *   dx === dy      straight down          spurs to stores and sidings
+   *   dx === -dy     straight right         short connectors
+   *
+   * So: one main line along y = 4 carrying the document from EA-S3 to
+   * surveil.av5, every stop two cells apart to give the labels room. Everything
+   * a document can branch to hangs off that line on one of the other three axes,
+   * with the control plane (config, audit) above it and storage, sidings and
+   * dead ends below. Nothing sits at a position that puts it under a rail it is
+   * not connected to.
+   *
+   * kind: station (a K8s service) | yard (Elasticsearch) | depot (S3 / Mongo)
+   *     | siding (a dead-end topic — a DLT, where a document stops for good)
+   *     | terminus (the surveillance line ends, but a record carries on)
+   *     | external (outside the estate)
+   */
   var STOPS = [
+    // --- the main line, y = 4, west to east ---------------------------------
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
-    { id: 'gateway',    name: 'Gateway',             kind: 'station', tech: 'K8s',           grid: { x: 2, y: 3 } },
-    { id: 'ec-s3',      name: 'EC-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 2, y: 4 } },
-    { id: 'qualifier',  name: 'Queue Qualifier',     kind: 'station', tech: 'K8s',           grid: { x: 3, y: 3 } },
-    { id: 'filter',     name: 'Surveillance Filter', kind: 'station', tech: 'K8s',           grid: { x: 4, y: 3 } },
-    { id: 'evaluator',  name: 'Policy Evaluator',    kind: 'station', tech: 'K8s',           grid: { x: 5, y: 3 } },
-    { id: 'quota',      name: 'Quota Manager',       kind: 'station', tech: 'K8s',           grid: { x: 8, y: 3 } },
-    { id: 'indexer',    name: 'Indexer',             kind: 'station', tech: 'K8s',           grid: { x: 7, y: 5 } },
-    { id: 'surveil',    name: 'surveil.av5',         kind: 'yard',    tech: 'Elasticsearch', grid: { x: 6, y: 6 },
+    { id: 'gateway',    name: 'Gateway',             kind: 'station', tech: 'K8s',           grid: { x: 2, y: 4 } },
+    { id: 'qualifier',  name: 'Queue Qualifier',     kind: 'station', tech: 'K8s',           grid: { x: 4, y: 4 } },
+    { id: 'filter',     name: 'Surveillance Filter', kind: 'station', tech: 'K8s',           grid: { x: 6, y: 4 } },
+    { id: 'evaluator',  name: 'Policy Evaluator',    kind: 'station', tech: 'K8s',           grid: { x: 8, y: 4 } },
+    { id: 'indexer',    name: 'Indexer',             kind: 'station', tech: 'K8s',           grid: { x: 10, y: 4 } },
+    { id: 'surveil',    name: 'surveil.av5',         kind: 'yard',    tech: 'Elasticsearch', grid: { x: 12, y: 4 },
       role: 'Clearance Terminal' },
-    { id: 'review',     name: 'review.v1',           kind: 'yard',    tech: 'Elasticsearch', grid: { x: 8, y: 6 },
+
+    // --- below the line: storage, sidings, dead ends -------------------------
+    // Each one hangs straight down on screen (dx === dy) from its own station,
+    // so a spur can never be mistaken for a continuation of the journey.
+    { id: 'ec-s3',      name: 'EC-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 3, y: 5 } },
+    { id: 'qualifier-dlt', name: '{topic}-dlt',      kind: 'siding',  tech: 'Kafka',         grid: { x: 5, y: 5 },
+      role: 'Dead Letter Topic' },
+    { id: 'review',     name: 'review.v1',           kind: 'yard',    tech: 'Elasticsearch', grid: { x: 11, y: 5 },
       role: 'Violation Depot' },
 
-    /*
-     * The Queue Qualifier dead letter topic. Its grid position is the one thing
-     * on this map that is a drawing decision rather than a document fact: it is
-     * a Kafka topic, so it has no place on the architecture image, and
-     * data/layout.js has no cell for it. (3,5) is free in that layout and hangs
-     * clear below the qualifier at (3,3), which is what a dead-end siding
-     * should look like. The topic itself is real; only where it sits is chosen.
-     */
-    { id: 'qualifier-dlt', name: '{topic}-dlt', kind: 'siding', tech: 'Kafka', grid: { x: 3, y: 5 },
-      role: 'Dead Letter Topic' },
-
-    /*
-     * The not-qualified branch. A terminus, not a siding: the document stops
-     * being surveilled, but an audit record carries on to Centralized Audit and
-     * is written to Mongo. Drawing it in the DLT's red would say something went
-     * wrong, and nothing did — not matching a flag policy is a normal, correct
-     * outcome for most traffic.
-     *
-     * centralised-audit takes its cell straight from data/layout.js. The other
-     * two are Kafka topics and a Mongo collection, which the architecture image
-     * does not place, so (4,1) and (5,0) are chosen — both free in that layout,
-     * both keeping the branch on one clean line up from the filter.
-     */
-    { id: 'not-qualified', name: '.not-qualified', kind: 'terminus', tech: 'Kafka', grid: { x: 4, y: 1 },
+    // --- above the line: the audit plane ------------------------------------
+    // The not-qualified walk climbs straight up on screen from the filter —
+    // filter -> .not-qualified -> Centralized Audit are each dx === dy === -1 —
+    // and the Mongo collection peels off due right (dx === -dy).
+    { id: 'not-qualified', name: '.not-qualified',   kind: 'terminus', tech: 'Kafka',        grid: { x: 5, y: 3 },
       role: 'End of the surveillance line' },
-    { id: 'audit',       name: 'Centralized Audit', kind: 'station', tech: 'K8s',     grid: { x: 4, y: 0 } },
-    { id: 'audit-store', name: 'ec-audit-events',   kind: 'depot',   tech: 'MongoDB', grid: { x: 5, y: 0 } },
+    { id: 'audit',       name: 'Centralized Audit',  kind: 'station',  tech: 'K8s',          grid: { x: 4, y: 2 } },
+    { id: 'audit-store', name: 'ec-audit-events',    kind: 'depot',    tech: 'MongoDB',      grid: { x: 5, y: 1 } },
 
-    /*
-     * The rest of the estate. Every cell here comes straight from
-     * data/layout.js, which was derived from the architecture image — none of
-     * these positions is a drawing decision.
-     *
-     * They carry no scenario steps yet: they are on the map so that the estate
-     * looks like the estate, and so that the edges into and out of the walked
-     * path have somewhere real to land.
-     */
-    { id: 'manual-run',     name: 'Manual Run',            kind: 'station',  tech: 'K8s', grid: { x: 1, y: 4 } },
-    { id: 'config-curator', name: 'Config Curator',        kind: 'station',  tech: 'K8s', grid: { x: 3, y: 2 } },
-    { id: 'alerting',       name: 'Alerting',              kind: 'station',  tech: 'K8s', grid: { x: 10, y: 2 } },
-    { id: 'echo-engine',    name: 'Echo Engine',           kind: 'station',  tech: 'K8s', grid: { x: 12, y: 2 } },
-    { id: 'review-service', name: 'Review Service',        kind: 'station',  tech: 'K8s', grid: { x: 9, y: 7 } },
-    { id: 'reporting',      name: 'Reporting',             kind: 'station',  tech: 'K8s', grid: { x: 11, y: 7 } },
-    { id: 'conduct-audit',  name: 'Conduct Audit Service', kind: 'station',  tech: 'K8s', grid: { x: 12, y: 7 } },
-    { id: 'cognition',      name: 'Cognition Analytics',   kind: 'external', tech: 'external', grid: { x: 5, y: 1 } }
+    // --- the y = 3 row: everything fed from the main line's later stops -------
+    // Runs parallel to the main line one cell above it, so its rails never cross
+    // it — they only ever meet it at a station.
+    { id: 'quota',       name: 'Quota Manager',      kind: 'station',  tech: 'K8s',          grid: { x: 9, y: 3 } },
+    { id: 'alerting',    name: 'Alerting',           kind: 'station',  tech: 'K8s',          grid: { x: 11, y: 3 } },
+    { id: 'echo-engine', name: 'Echo Engine',        kind: 'station',  tech: 'K8s',          grid: { x: 13, y: 3 } },
+
+    // --- upstream and control ------------------------------------------------
+    { id: 'manual-run',     name: 'Manual Run',      kind: 'station',  tech: 'K8s',          grid: { x: 0, y: 2 } },
+    { id: 'config-curator', name: 'Config Curator',  kind: 'station',  tech: 'K8s',          grid: { x: 2, y: 2 } },
+    // Cognition sits below the line rather than above it with the other
+    // non-pipeline services. Above the evaluator, on any clean axis, its spur
+    // crossed the .not-qualified -> Quota Manager rail; here it runs due left on
+    // screen from the evaluator and crosses nothing.
+    { id: 'cognition',      name: 'Cognition Analytics', kind: 'external', tech: 'external', grid: { x: 7, y: 5 } },
+
+    // --- the y = 7 row: the reporting and review subdomain -------------------
+    { id: 'review-service', name: 'Review Service',        kind: 'station', tech: 'K8s',     grid: { x: 7, y: 7 } },
+    { id: 'reporting',      name: 'Reporting',             kind: 'station', tech: 'K8s',     grid: { x: 9, y: 7 } },
+    { id: 'conduct-audit',  name: 'Conduct Audit Service', kind: 'station', tech: 'K8s',     grid: { x: 11, y: 7 } }
   ];
 
   // transport: kafka (a track) | cdc (outbox -> Debezium -> a track) | s3 (an IO spur)
@@ -136,18 +157,26 @@
      */
     { from: 'manual-run',     to: 'gateway',        transport: 'kafka',
       topic: 'ec.surveillance-manual-run.{tenant}.ingestion' },
-    { from: 'gateway',        to: 'filter',         transport: 'cdc',
+    /*
+     * The manual-run bypass. Drawn with a bow because it genuinely is one: a
+     * manual-run communication is qualified before it ever reaches Gateway, so
+     * it skips Queue Qualifier entirely and goes from Gateway's outbox straight
+     * to Surveillance Filter. Straight, this rail ran exactly through the
+     * middle of the qualifier, which said the opposite of what it means. Bowed,
+     * it visibly goes around the station it bypasses.
+     */
+    { from: 'gateway',        to: 'filter',         transport: 'cdc', bow: 1.15,
       topic: 'ec.surveillance-gateway.outbox.{tenant}.qualifiedCommunication' },
 
-    { from: 'config-curator', to: 'qualifier',      transport: 'kafka',
+    { from: 'config-curator', layer: 'config', to: 'qualifier',      transport: 'kafka',
       topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
-    { from: 'config-curator', to: 'filter',         transport: 'kafka',
+    { from: 'config-curator', layer: 'config', to: 'filter',         transport: 'kafka',
       topic: 'ec.config-curator.{tenant}.surveillance-policies' },
-    { from: 'config-curator', to: 'quota',          transport: 'kafka',
+    { from: 'config-curator', layer: 'config', to: 'quota',          transport: 'kafka',
       topic: 'ec.config-curator.{tenant}.surveillance-sampling' },
-    { from: 'config-curator', to: 'review-service', transport: 'kafka',
+    { from: 'config-curator', layer: 'config', to: 'review-service', transport: 'kafka',
       topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
-    { from: 'config-curator', to: 'reporting',      transport: 'kafka',
+    { from: 'config-curator', layer: 'config', to: 'reporting',      transport: 'kafka',
       topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
 
     /*
@@ -161,9 +190,9 @@
      * rather than quietly promoted or quietly dropped: a gap someone can see is
      * a gap someone can go and close.
      */
-    { from: 'config-curator', to: 'alerting',       transport: 'kafka', unverified: true,
+    { from: 'config-curator', layer: 'config', to: 'alerting',       transport: 'kafka', unverified: true,
       topic: 'ec.config-curator.{tenant}.alert-generation-config' },
-    { from: 'config-curator', to: 'echo-engine',    transport: 'kafka', unverified: true,
+    { from: 'config-curator', layer: 'config', to: 'echo-engine',    transport: 'kafka', unverified: true,
       topic: 'ec.config-curator.{tenant}.configuration' },
 
     { from: 'not-qualified',  to: 'quota',          transport: 'kafka',
@@ -177,20 +206,20 @@
 
     { from: 'evaluator',      to: 'cognition',      transport: 'kafka',
       topic: 'cognition.config.{tenant}.kafkaTopic (per-tenant)' },
-    { from: 'evaluator',      to: 'audit',          transport: 'kafka',
+    { from: 'evaluator',      to: 'audit', layer: 'audit',          transport: 'kafka',
       topic: 'ec.centralized.{tenant}.audit' },
-    { from: 'echo-engine',    to: 'audit',          transport: 'kafka',
+    { from: 'echo-engine',    to: 'audit', layer: 'audit',          transport: 'kafka',
       topic: 'ec.centralized.{tenant}.audit' },
 
-    { from: 'audit',          to: 'quota',          transport: 'cdc',
+    { from: 'audit',          to: 'quota', layer: 'audit',          transport: 'cdc',
       topic: 'ec.centralised-audit.outbox.{tenant}.windowReconciliation' },
-    { from: 'audit',          to: 'reporting',      transport: 'cdc',
+    { from: 'audit',          to: 'reporting', layer: 'audit',      transport: 'cdc',
       topic: 'ec.centralised-audit.outbox.{tenant}.windowReconciliation' },
-    { from: 'quota',          to: 'reporting',      transport: 'cdc',
+    { from: 'quota',          to: 'reporting', layer: 'audit',      transport: 'cdc',
       topic: 'ec.surveillance-quota-manager.{tenant}.quota-windows' },
-    { from: 'quota',          to: 'manual-run',     transport: 'cdc',
+    { from: 'quota',          to: 'manual-run', layer: 'audit',     transport: 'cdc',
       topic: 'ec.surveillance-quota-manager.{tenant}.quota-windows' },
-    { from: 'reporting',      to: 'conduct-audit',  transport: 'kafka',
+    { from: 'reporting',      to: 'conduct-audit', layer: 'audit',  transport: 'kafka',
       topic: 'conduct_audit_topic' }
   ];
 

@@ -21,6 +21,7 @@
     paused: false,
     speed: 1,
     follow: true,
+    hideLayers: false,                     // config-sync and audit plumbing
     dpr: 1
   };
 
@@ -181,7 +182,8 @@
       dpr: st.dpr,
       cart: cart,
       activeTrack: activeTrack(),
-      stopState: stopStateFor
+      stopState: stopStateFor,
+      hideLayers: st.hideLayers
     });
 
     requestAnimationFrame(tick);
@@ -230,6 +232,13 @@
     st.speed = st.speed === 1 ? 2 : (st.speed === 2 ? 0.5 : 1);
     this.textContent = st.speed + '×';
   };
+  // Config sync and audit plumbing are drawn faint by default; this hides them
+  // outright, leaving only the rails a document can actually travel on.
+  document.getElementById('plumbing').onclick = function () {
+    st.hideLayers = !st.hideLayers;
+    this.classList.toggle('on', !st.hideLayers);
+  };
+
   document.getElementById('followBtn').onclick = function () {
     st.follow = !st.follow;
     this.textContent = st.follow ? '◎ Following' : '○ Free';

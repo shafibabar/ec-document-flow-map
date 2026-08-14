@@ -162,13 +162,40 @@ var Render = (function () {
       return;
     }
 
+    /*
+     * An edge in a layer other than the document's own flow — config sync,
+     * audit and reconciliation plumbing. These are the long hauls across the
+     * estate, and drawing them at full weight is what made the map look like a
+     * plate of spaghetti: they are real, but they are not the journey. Drawn as
+     * faint background wiring so the eye reads the railway first and the
+     * plumbing only when it goes looking for it.
+     */
+    if (track.layer) {
+      ctx.globalAlpha *= 0.3;
+      ctx.lineWidth = 2 * z;
+      if (!track.unverified) ctx.setLineDash([4 * z, 6 * z]);
+    }
+
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
-    ctx.lineTo(q.x, q.y);
+    if (track.bow) {
+      // Bow out perpendicular to the rail, so the line visibly goes around
+      // whatever it is bypassing instead of straight through it.
+      var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+      var vx = q.x - p.x, vy = q.y - p.y;
+      var vlen = Math.sqrt(vx * vx + vy * vy) || 1;
+      ctx.quadraticCurveTo(mx + (-vy / vlen) * Iso.TILE_H * track.bow * z,
+                           my + (vx / vlen) * Iso.TILE_H * track.bow * z,
+                           q.x, q.y);
+    } else {
+      ctx.lineTo(q.x, q.y);
+    }
     ctx.stroke();
 
     // Sleepers, on solid kafka rails only — they read as railway at a glance.
-    if (track.transport === 'kafka') {
+    // Not on bowed rails (the maths here follows the straight chord, not the
+    // curve) and not on background layers (sleepers would undo the fading).
+    if (track.transport === 'kafka' && !track.bow && !track.layer) {
       ctx.setLineDash([]);
       var dx = q.x - p.x, dy = q.y - p.y;
       var len = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -355,6 +382,7 @@ var Render = (function () {
     drawGround(ctx, canvas, flow);
 
     flow.tracks.forEach(function (t) {
+      if (t.layer && state.hideLayers) return;
       drawTrack(ctx, canvas, flow, t, state.activeTrack === t.from + '>' + t.to);
     });
 
