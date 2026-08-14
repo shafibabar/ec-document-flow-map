@@ -45,6 +45,13 @@
  *  6. Several entries carry an **array** of sources, because their fields were
  *     read from different sections. One `{file, heading}` would have had to name
  *     one of them and silently mis-cite the rest.
+ *  7. Topic and DLT ids are long, and deliberately so. An id is `topic:`/`dlt:`
+ *     plus that node's **own name**, with the tenant placeholder normalised to
+ *     `{tenant}` — never the producer, never a shortened segment. The id is the
+ *     key Parent 2 joins fifteen extracts on, and a producer-keyed id gives
+ *     `ec.centralized.{tenant}.audit` four different ids, one per publishing
+ *     service, while a source-topic-keyed DLT id merges three real DLTs into one
+ *     node. `name` still holds the document's literal text, `<tenant>` and all.
  *
  * The wrapper below works both as a browser <script> tag (registering into
  * window.EC_EXTRACTS) and as a Node require() for the validator. No build step.
@@ -93,32 +100,32 @@
         summary: 'Detects echo alerts and emits automated close/update actions.',
         source: { file: IMG, heading: 'Actioning Sub-domain' } },
 
-      { id: 'topic:alerting.alertedCommunication', name: 'ec.alerting-service.<tenant>.alertedCommunication',
+      { id: 'topic:ec.alerting-service.{tenant}.alertedCommunication', name: 'ec.alerting-service.<tenant>.alertedCommunication',
         kind: 'topic', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Events Consumed', row: 1 } },
-      { id: 'topic:config-curator.surveillance-policies', name: 'ec.config-curator.<tenant>.surveillance-policies',
+      { id: 'topic:ec.config-curator.{tenant}.surveillance-policies', name: 'ec.config-curator.<tenant>.surveillance-policies',
         kind: 'topic', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Events Consumed', row: 2 } },
-      { id: 'topic:config-curator.configuration', name: 'ec.config-curator.<tenant>.configuration',
+      { id: 'topic:ec.config-curator.{tenant}.configuration', name: 'ec.config-curator.<tenant>.configuration',
         kind: 'topic', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Events Consumed', row: 3 } },
-      { id: 'topic:echo-engine.echoAction', name: 'ec.echo-engine.<tenant>.echoAction',
+      { id: 'topic:ec.echo-engine.{tenant}.echoAction', name: 'ec.echo-engine.<tenant>.echoAction',
         kind: 'topic', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Events Published', row: 1 } },
-      { id: 'topic:centralized.audit', name: 'ec.centralized.<tenant>.audit',
+      { id: 'topic:ec.centralized.{tenant}.audit', name: 'ec.centralized.<tenant>.audit',
         kind: 'topic', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Events Published', row: 2 } },
 
-      { id: 'dlt:alertedCommunication', name: 'ec.alerting-service.<tenant>.alertedCommunication-ec-echo-engine-dlt',
+      { id: 'dlt:ec.alerting-service.{tenant}.alertedCommunication-ec-echo-engine-dlt', name: 'ec.alerting-service.<tenant>.alertedCommunication-ec-echo-engine-dlt',
         kind: 'dlt', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Retry and DLT topics', row: 1 } },
-      { id: 'dlt:surveillance-policies', name: 'ec.config-curator.<tenant>.surveillance-policies-ec-echo-engine-dlt',
+      { id: 'dlt:ec.config-curator.{tenant}.surveillance-policies-ec-echo-engine-dlt', name: 'ec.config-curator.<tenant>.surveillance-policies-ec-echo-engine-dlt',
         kind: 'dlt', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Retry and DLT topics', row: 2 } },
-      { id: 'dlt:configuration', name: 'ec.config-curator.<tenant>.configuration-ec-echo-engine-dlt',
+      { id: 'dlt:ec.config-curator.{tenant}.configuration-ec-echo-engine-dlt', name: 'ec.config-curator.<tenant>.configuration-ec-echo-engine-dlt',
         kind: 'dlt', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Retry and DLT topics', row: 3 } },
-      { id: 'dlt:echoAction', name: 'ec.echo-engine.<tenant>.echoAction-ec-echo-engine-dlt',
+      { id: 'dlt:ec.echo-engine.{tenant}.echoAction-ec-echo-engine-dlt', name: 'ec.echo-engine.<tenant>.echoAction-ec-echo-engine-dlt',
         kind: 'dlt', group: 'none', generation: 'unknown',
         source: { file: FM, heading: 'Retry and DLT topics', row: 4 } }
     ],
@@ -129,7 +136,7 @@
       // different sections, so the entry cites both: the Events Consumed row
       // names the payload class, the diagrams and the stop_info name the
       // transport.
-      { from: 'topic:alerting.alertedCommunication', to: 'echo-engine',
+      { from: 'topic:ec.alerting-service.{tenant}.alertedCommunication', to: 'echo-engine',
         transport: 'cdc',
         name: 'ec.alerting-service.<tenant>.alertedCommunication',
         eventType: 'AlertEvent', direction: 'in',
@@ -144,7 +151,7 @@
         ] },
 
       // transport is cdc, not kafka: the payload is a Debezium CdcEvent.
-      { from: 'topic:config-curator.surveillance-policies', to: 'echo-engine',
+      { from: 'topic:ec.config-curator.{tenant}.surveillance-policies', to: 'echo-engine',
         transport: 'cdc', name: 'ec.config-curator.<tenant>.surveillance-policies',
         eventType: 'Debezium CdcEvent containing PolicyConfigPayload', direction: 'in',
         consumer: 'PolicyConfigConsumer.consume',
@@ -152,7 +159,7 @@
         purpose: "Synchronize policy configuration into the tenant's versioned policy collection.",
         source: { file: FM, heading: 'Events Consumed', row: 2 } },
 
-      { from: 'topic:config-curator.configuration', to: 'echo-engine',
+      { from: 'topic:ec.config-curator.{tenant}.configuration', to: 'echo-engine',
         transport: 'cdc', name: 'ec.config-curator.<tenant>.configuration',
         eventType: 'Debezium CdcEvent containing EchoConfigDTO', direction: 'in',
         consumer: 'EchoConfigConsumer.consume',
@@ -161,7 +168,7 @@
         source: { file: FM, heading: 'Events Consumed', row: 3 } },
 
       // Self-consumption: the service consumes its own published topic to emit audit records.
-      { from: 'topic:echo-engine.echoAction', to: 'echo-engine',
+      { from: 'topic:ec.echo-engine.{tenant}.echoAction', to: 'echo-engine',
         transport: 'kafka', name: 'ec.echo-engine.<tenant>.echoAction',
         eventType: 'EchoActionEvent', direction: 'in',
         consumer: 'EchoActionAuditAdapter.listen',
@@ -169,14 +176,14 @@
         note: 'Self-consumption — the service consumes the topic it publishes, to emit centralized audit records when audit integration is enabled.',
         source: { file: FM, heading: 'Events Consumed', row: 4 } },
 
-      { from: 'echo-engine', to: 'topic:echo-engine.echoAction',
+      { from: 'echo-engine', to: 'topic:ec.echo-engine.{tenant}.echoAction',
         transport: 'kafka', name: 'ec.echo-engine.<tenant>.echoAction',
         eventType: 'EchoActionEvent', direction: 'out',
         publisher: 'EchoActionEventPublisher.publish',
         trigger: 'Echo correlation classifies an alert as actionable and builds the configured echo action.',
         source: { file: FM, heading: 'Events Published', row: 1 } },
 
-      { from: 'echo-engine', to: 'topic:centralized.audit',
+      { from: 'echo-engine', to: 'topic:ec.centralized.{tenant}.audit',
         transport: 'kafka', name: 'ec.centralized.<tenant>.audit',
         eventType: 'EchoActionEvent for action audits, or header-only ProducerRecord<String, String> for non-action audits',
         direction: 'out',

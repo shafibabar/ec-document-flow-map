@@ -207,12 +207,22 @@ test('a circular extract is reported rather than hanging', () => {
 // tool promised and did not deliver.
 // ---------------------------------------------------------------------------
 
-test('every store technology the corpus names is accepted', () => {
-  // The enum was mongo/s3/elastic, which rejects Ceph and Hazelcast (Actioning),
-  // Redis (Quota Manager) and Athena (Manual Run) — three of the fifteen
-  // services could not record what their document plainly says.
+test('a stores[] section of real corpus rows draws no note and no problem', () => {
+  // Cycle 2 wrote this as "every store technology the corpus names is accepted",
+  // asserting only exit 0, when the enum was mongo/s3/elastic and rejected Ceph
+  // and Hazelcast (Actioning), Redis (Quota Manager) and Athena (Manual Run).
+  // Cycle 3 then made `store` advisory, so exit 0 became true of every value —
+  // and cycle 4 confirmed the test had gone vacuous by replacing all eight
+  // technologies with a made-up one and watching it still pass.
+  //
+  // The assertion that survives the reversal is the one about notes: these eight
+  // are the corpus's own technologies, so none of them should be surfaced as
+  // unfamiliar. That fails if a real value is dropped from KNOWN_STORES, which is
+  // the regression worth defending now the enum is gone.
   const r = run(path.join(FIXTURES, 'stores-technologies.js'));
   assert.strictEqual(r.code, 0, `these are all real store rows:\n${r.out}`);
+  assert.doesNotMatch(r.out, /note\(s\)/,
+    `no corpus store technology should be reported as unfamiliar:\n${r.out}`);
 });
 
 test('an unheard-of store technology is surfaced as a note, not rejected', () => {
@@ -275,8 +285,8 @@ test('an unrecognised store technology is a note, not a failure', () => {
   // document does not say, so this one advises instead.
   const r = run(path.join(FIXTURES, 'unknown-store.js'));
   assert.strictEqual(r.code, 0, `an odd store must not block a faithful extract:\n${r.out}`);
-  assert.match(r.out, /quantumdb/, 'but it must still be surfaced');
-  assert.match(r.out, /note/i, 'as a note rather than a problem');
+  assert.match(r.diag, /quantumdb/, 'but it must still be surfaced');
+  assert.match(r.diag, /note\(s\)/, 'as a note rather than a problem');
 });
 
 test('an external: id may not shadow an in-scope service', () => {
@@ -285,16 +295,71 @@ test('an external: id may not shadow an in-scope service', () => {
   // config-curator — one service, two nodes on the map.
   const r = run(path.join(FIXTURES, 'external-shadow.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /config-curator/, 'must name the offending id');
-  assert.match(r.out, /outside the estate/i,
+  assert.match(r.diag, /config-curator/, 'must name the offending id');
+  assert.match(r.diag, /outside the estate/i,
     'and must explain what external actually means, not just reject it');
 });
 
 test('a topic node id must carry its kind prefix', () => {
   const r = run(path.join(FIXTURES, 'unprefixed-id.js'));
   assert.notStrictEqual(r.code, 0);
-  assert.match(r.out, /topic:/, 'must state the required prefix');
-  assert.match(r.out, /nodes\[0\]\.id/, 'and name the offending entry');
+  assert.match(r.diag, /topic:/, 'must state the required prefix');
+  assert.match(r.diag, /nodes\[0\]\.id/, 'and name the offending entry');
+});
+
+// ---------------------------------------------------------------------------
+// Added in review cycle 4. Cycle 3 closed one merge-key collision; writing trial
+// extracts of Gateway, Indexer and Manual Run from the schema alone found four
+// more, and all four validated clean.
+// ---------------------------------------------------------------------------
+
+test('a service node id written as the documents write it is rejected, and the slug named', () => {
+  // Cycle 3's check compared id.replace(/^external:/, '') against the fifteen
+  // slugs — so it caught `external:config-curator`, the one spelling no document
+  // uses, and admitted `ec-gateway`, `alerting-service` and `central-audit`,
+  // which are literally the target names in Manual Run's outbound REST table.
+  const r = run(path.join(FIXTURES, 'alias-service-id.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /nodes\[0\]\.id.*Use "gateway"/s, 'ec-gateway -> gateway');
+  assert.match(r.diag, /nodes\[1\]\.id.*Use "alerting"/s, 'alerting-service -> alerting');
+  // central-audit is centralised-audit, NOT conduct-audit-service: there are two
+  // audit services and POST /v1/tenants/{t}/source is the centralised one's.
+  assert.match(r.diag, /nodes\[2\]\.id.*Use "centralised-audit"/s, 'central-audit -> centralised-audit');
+});
+
+test('an external: id shadowing a service under an alias is rejected too', () => {
+  // Policy Evaluator, Quota Manager and Reporting all call Queue Qualifier
+  // "Pipeline Qualifier". Parent #3 decided they are one component; three
+  // extracts would otherwise add a pipeline-qualifier node beside it.
+  const r = run(path.join(FIXTURES, 'external-alias.js'));
+  assert.notStrictEqual(r.code, 0);
+  assert.match(r.diag, /Use the bare slug "queue-qualifier"/);
+});
+
+test('a producer-keyed topic or DLT id is surfaced with the id its name implies', () => {
+  // A note, not a failure — the shape is legal and blocking it would stop a
+  // faithful extract. But ec.centralized.{tenant}.audit is published by Echo
+  // Engine, Policy Evaluator and Queue Qualifier, so a producer-keyed id gives
+  // one topic three ids and the map three nodes.
+  const r = run(path.join(FIXTURES, 'producer-keyed-id.js'));
+  assert.strictEqual(r.code, 0, `the shape is legal:\n${r.out}`);
+  assert.match(r.diag, /nodes\[0\]\.id.*"topic:ec\.centralized\.\{tenant\}\.audit"/s,
+    'must name the derived id, not merely complain');
+  assert.match(r.diag, /nodes\[1\]\.id.*"dlt:ec\.echo-engine\.\{tenant\}\.echoAction-ec-echo-engine-dlt"/s,
+    'a DLT id derives from the DLT topic name, not from the source topic');
+  assert.doesNotMatch(r.diag, /nodes\[2\]/,
+    'a topic with no dotted segments and a matching id is already correct');
+  assert.doesNotMatch(r.diag, /nodes\[3\]/,
+    '<tenant> in the name normalises to {tenant} in the id, so this one matches');
+});
+
+test('the fifteen slugs, the four store nodes and the three externals are accepted', () => {
+  // The other half of every check above: the correct forms must pass silently,
+  // or the gate teaches agents to write something else. The worked example is
+  // the real evidence for this (below); this asserts the sets themselves.
+  const r = run(path.join(FIXTURES, 'good-extract.js'));
+  assert.strictEqual(r.code, 0);
+  assert.doesNotMatch(r.out, /note\(s\)/, `a conforming extract draws no notes:\n${r.out}`);
 });
 
 test('the real worked example conforms', () => {

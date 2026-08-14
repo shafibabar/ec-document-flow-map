@@ -23,7 +23,7 @@ Note the quoted glob. `node --test tools/test/` does **not** work on Node 22 —
 tries to `require()` the directory as a module and fails with `MODULE_NOT_FOUND`.
 Bare `node --test` from the repo root also works but additionally discovers the
 fixture files under `tools/test/fixtures/` and counts each as a passing "test",
-reporting 46 rather than the 25 real ones. Use the glob, and expect 25.
+reporting 59 rather than the 32 real ones. Use the glob, and expect 32.
 
 ---
 
@@ -231,12 +231,13 @@ and it documents none"; absence cannot be distinguished from having forgotten it
 
 | Field | Notes |
 |---|---|
-| `id` | Required. `echo-engine`, `topic:echo-engine.echoAction`, `dlt:echoAction` |
+| `id` | Required. `echo-engine`, `topic:ec.echo-engine.{tenant}.echoAction`, `dlt:ec.echo-engine.{tenant}.echoAction-ec-echo-engine-dlt` |
 | `name` | Required. The literal name as written in the source, placeholders intact |
 | `kind` | Required. `service` · `store` · `topic` · `dlt` · `external` |
 | `group` | Required. Values as for `service`. **`none` on every topic and DLT node** — the image draws no topic inside a sub-domain frame, so "belongs to no sub-domain" is a positive reading, not a silence |
 | `generation` | Required. **`unknown` on every topic and DLT node** — the image assigns a generation to components, not to topics, and inferring one from the producing service would be a guess |
 | `summary` | The service node carries one — the same sentence as `service.summary`, or a shorter form of it. Topic and DLT nodes normally have none: writing one means inventing it |
+| `note` | Optional, for something the document states about the node that no other field holds — Manual Run's `ec-surveillance-manual-run-{t}-qualified` is marked `@Deprecated`, and that belongs here rather than in an invented field |
 
 Record topics and DLTs as nodes. **These are not nodes:**
 
@@ -250,15 +251,55 @@ Record topics and DLTs as nodes. **These are not nodes:**
 #### `id` conventions — this is the merge key
 
 Parent 2 merges fifteen extracts by joining on `id`. Two agents inventing two ids
-for one thing produces two nodes on the map, so the prefixes are fixed:
+for one thing produces two nodes on the map, so the forms are fixed:
 
 | Kind | Form | Example |
 |---|---|---|
 | `service` | the service slug, no prefix | `echo-engine` |
-| `topic` | `topic:` + producer + `.` + last segment | `topic:echo-engine.echoAction` |
-| `dlt` | `dlt:` + last segment of the source topic | `dlt:echoAction` |
-| `store` | `store:` + the name as the document writes it | `store:surveil.av5`, `store:EC-S3` |
-| `external` | `external:` + slug of the label | `external:archive` |
+| `topic` | `topic:` + **the topic's own name**, tenant placeholder normalised | `topic:ec.echo-engine.{tenant}.echoAction` |
+| `dlt` | `dlt:` + **the DLT topic's own name**, same normalisation | `dlt:ec.echo-engine.{tenant}.echoAction-ec-echo-engine-dlt` |
+| `store` | one of four fixed ids — see below | `store:surveil.av5` |
+| `external` | one of three fixed ids — see below | `external:archive` |
+
+**The id is derived from the name, never from who publishes it.** An earlier
+draft said `topic:` + producer + `.` + last segment. That cannot work, and the
+reasons are worth keeping so it is not re-proposed:
+
+- **Shared topics have several producers.** `ec.centralized.{tenant}.audit` is
+  published by Echo Engine, Policy Evaluator and Queue Qualifier and consumed by
+  Reporting. A producer-keyed id gives that one topic four ids and the map four
+  nodes.
+- **"Producer" is ambiguous.** For `ec.alerting-service.{tenant}.alertedCommunication`
+  it means either the slug `alerting` or the name's own segment
+  `alerting-service`, and the two differ for every `ec.alerting-service.*`,
+  `ec.surveillance-gateway.*`, `ec.surveillance-manual-run.*`,
+  `ec.surveillance-policy-evaluator.*`, `ec.surveillance-qualifier.*` and
+  `ec.manual-runs.*` topic in the estate.
+- **"Last segment" degenerates.** `ec.centralized.{tenant}.audit.indexer.event`
+  reduces to `event`; `supBulkIndexingTopic_k8s`, `supActionIndexTopic_k8s` and
+  `conduct_audit_topic` have no segments at all.
+- **DLT names embed the *consuming* service**, so one source topic has as many
+  DLTs as it has consumers. Centralized Audit's Events Consumed table writes both
+  `ec.surveillance-policy-evaluator.{tenant}.surveilled-dlt` **and**
+  `…surveilled-audit-adapter-dlt`, and Indexer adds `{original-topic}-ec-indexer-dlt`
+  over the same source topic. Same for
+  `ec.surveillance-filter.{tenant}.evaluations-audit-adapter-dlt` beside
+  `…evaluations-ec-surveillance-policy-evaluator-dlt`. A source-topic-keyed id
+  merges those distinct topics into one node.
+
+Deriving from the name makes the join mechanical: two agents looking at the same
+topic write the same id without knowing anything about each other's document, and
+`retries[].dltTarget` joins to its `dlt` node by construction.
+
+**Tenant placeholder normalisation — in the `id` only.** The corpus writes the
+tenant placeholder six ways. Inside an `id`, rewrite `<tenant>`, `{t}`,
+`{tenantName}`, `{tenantId}` and `%s` to **`{tenant}`**. Everything else in the
+name is kept character for character. `name` always keeps the document's literal
+text, placeholder and all — the normalisation exists so the merge key is stable,
+not to correct the document, and `tenancy[]` is where the difference is recorded.
+
+Ids are long. That is the correct trade: an id is a key, not a label, and
+`name` and `displayName` are what the map draws.
 
 **`external:` means outside the estate, never merely outside the service you are
 extracting.** This is the trap: Gateway calls Config Curator, so Gateway's
@@ -267,8 +308,7 @@ is external *to Gateway*. But Config Curator is one of the fifteen and its own
 extract calls it `config-curator`. Two reasonable agents, one service, two nodes
 on the map. If the thing you are referencing is one of the fifteen in-scope
 services, use its bare slug and `kind: "service"`, however external it feels from
-where you are standing. The validator rejects an `external:` id that shadows a
-known service.
+where you are standing.
 
 The fifteen canonical service slugs: `gateway` · `queue-qualifier` ·
 `surveillance-filter` · `policy-evaluator` · `quota-manager` · `indexer` ·
@@ -277,41 +317,111 @@ The fifteen canonical service slugs: `gateway` · `queue-qualifier` ·
 Note `centralised-audit` is spelled with an `s`, matching the service name, while
 its folder is `Centralized Audit` with a `z`.
 
-Slugs for services and external systems are lower-case. Store and topic ids keep
-the name exactly as the document or Parent #3 writes it, because that string is
-what the join matches on. The literal name always also goes in `name`, with
-placeholders intact. If a topic's producer is not named in your document, use the
-topic's own distinguishing segment rather than guessing at a producer.
+##### Cross-service names — the documents do not use the slugs
+
+Almost none of them do. Every name below appears in a real
+`REST APIs Consumed (Outbound)` table and means one of the fifteen. Use the slug
+in the `id`; keep the document's wording in `name` and in `restOutbound[].target`:
+
+| Written in a document as | Slug |
+|---|---|
+| `ec-gateway`, `Gateway` | `gateway` |
+| `queue-qualifier`, `ec-queue-qualifier`, `Queue Qualifier`, **`Pipeline Qualifier`**, `pipeline-qualifier` | `queue-qualifier` |
+| `surveillance-filter`, `ec-surveillance-filter`, `Surveillance Filter` | `surveillance-filter` |
+| `policy-evaluator`, `ec-surveillance-policy-evaluator` | `policy-evaluator` |
+| `quota-manager`, `ec-surveillance-quota-manager` | `quota-manager` |
+| `config-curator`, `Config Curator`, `ec-config-curator` | `config-curator` |
+| `central-audit`, `ec-centralised-audit`, `Centralised Audit` | `centralised-audit` |
+| `alerting-service`, `ec-alerting-service` | `alerting` |
+| `Manual Run Service`, `ec-manual-runs-service` | `manual-run` |
+| `ec-reporting` | `reporting` |
+
+**`Pipeline Qualifier` is Queue Qualifier.** Policy Evaluator, Quota Manager and
+Reporting all call it that. Parent #3 settled it: the folder `Queue Qualifier`,
+the service `ec-surveillance-pipeline-qualifier` and the image's "Queue
+(Pipeline) Qualifier" are one component. Three extracts would otherwise put a
+`pipeline-qualifier` node on a map that already has `queue-qualifier`.
+
+**`central-audit` is `centralised-audit`, not `conduct-audit-service`** — there
+are two audit services and Manual Run's `POST /v1/tenants/{t}/source` is
+`ec-centralised-audit`'s `SourceController`. If your document's target name is
+not on this list and you cannot tell which of the fifteen it is, write the row in
+`restOutbound[]`, record an `ambiguities` entry, and create **no node** — an
+invented id costs more than a missing edge.
 
 #### Which stores become nodes
 
-Parent #3 decided this and it is not open: the only store *stops* are **`EA-S3`**
-and **`EC-S3`** (S3), and **`surveil.av5`** and **`review.v1`** (Elasticsearch).
-Give those a `kind: 'store'` node when your document interacts with them, and an
-edge with `transport: 's3'` or `'elastic'` and `direction: 'read'` / `'write'`.
+Parent #3 decided this and it is not open. There are exactly **four** store
+nodes in the whole model, and these are their ids:
+
+`store:EA-S3` · `store:EC-S3` · `store:surveil.av5` · `store:review.v1`
+
+**`EA-S3` and `EC-S3` appear in no document.** Parent #3 renamed them from the
+image's labels; the documents write `AWS S3`, `Source Bucket`, `Conduct Bucket`,
+`Tenant-specific buckets`, `ec-surveillance-results`. So:
+
+- Create an S3 store node **only if your own document tells you which bucket
+  role it is** — the archive-side source that content is read from (`EA-S3`) or
+  the Conduct-side destination it is written to (`EC-S3`) — and record the basis
+  in `ambiguities`. Gateway's Persistent Store Interactions and its mermaid
+  (`SRC[(Source Bucket)]`, `DST[(Conduct Bucket)]`) do tell you; Indexer's
+  "Tenant-specific buckets" does not.
+- If it does not, put the interaction in `stores[]` with `store: 's3'`, write an
+  `ambiguities` entry saying the bucket could not be identified, and create **no
+  node and no edge**. Parent 2 places it. Do not invent `store:AWS-S3`.
+
+`surveil.av5` and `review.v1` are the easy case: Indexer names both verbatim, so
+its extract carries both nodes and an `elastic` edge to each.
 
 Everything else stays in `stores[]` with no node and no edge — every Mongo
-collection, every outbox, every Redis, Hazelcast, Ceph and Athena interaction.
-`mongo` is in the transport enum because Parent #3 fixed the six transports, not
-because Mongo interactions are drawn; if you do write a `mongo` edge, its `to`
-must be a `store` node you declared.
+collection, every outbox, every Redis, Hazelcast, Ceph, Athena, ShedLock and
+Archive-Elasticsearch interaction. `mongo` is in the transport enum because
+Parent #3 fixed the six transports, not because Mongo interactions are drawn; if
+you do write a `mongo` edge, its `to` must be a `store` node you declared.
 
 #### External systems
 
-Integrated (non-service) systems get `kind: 'external'` nodes: **Archive**,
-**Cognition Analytics**, **Derived Store** and the purple boxes on the image such
-as the EA Indexing Gateway. Their `generation` is `integrated`. Give them
-`group: 'none'` unless the image draws them inside a sub-domain frame.
+Parent #3 kept exactly **three** integrated systems, and these are their ids:
 
-A row in `restOutbound[]` whose target is one of those, or another service in the
-estate, also gets an edge: `transport: 'rest'`, `direction: 'out'`, `name` set to
-the method and path. A `restInbound[]` row does **not** produce an edge — the
-caller is outside this extract's knowledge, and inventing a `from` for it is a
-guess. This is why the worked example has a `restInbound` row and no `rest` edge.
+`external:archive` · `external:cognition-analytics` · `external:derived-store`
+
+Their `generation` is `integrated` and their `group` is `none` unless the image
+draws them inside a sub-domain frame. The Archive is reached under several names
+— `EA Storage`, `Indexing Gateway`, `ea-indexing-gateway`, `Archive
+Elasticsearch`, `Archive index (hlrest)` — and they are one node. Indexer and
+Manual Run call the *identical* endpoint `POST /v1/index/sup-archive/{tenant}/{source}`
+under two of those names, so this is not hypothetical.
+
+**Everything else outbound gets no node and no edge.** Record the call in
+`restOutbound[]` and write an `ambiguities` entry. This covers:
+
+- **2.0 components.** Parent #3: "All 2.0 (grey) components excluded …
+  `supervision.api` is still called by **Indexer** — recorded in the accuracy
+  report as an outbound dependency on an out-of-scope component, **not drawn**."
+  So Indexer's `Supervision API` row is recorded and no node is created. There is
+  deliberately no `2.0` value in `generation`; writing `integrated` for a 2.0
+  component would be false, and `unknown` would throw away a fact you have.
+- **Third parties and infrastructure** — `ISS v2` / `ISS V2`, `UAA`,
+  `Debezium Connect`, `Conduct Search`, `Cognition Platform`.
+
+`Cognition Platform` (Policy Evaluator) is *not* silently equated with
+Parent #3's `Cognition Analytics`, which #3 records as appearing in zero
+documents. They may be the same thing. Record the row, record the ambiguity, and
+let Parent 2 decide — resolving it here would destroy the evidence that it was
+ever a question.
+
+A row in `restOutbound[]` whose target is one of the three externals, or one of
+the fifteen services, also gets an edge: `transport: 'rest'`, `direction: 'out'`,
+`name` set to the method and path. A `restInbound[]` row does **not** produce an
+edge — the caller is outside this extract's knowledge, and inventing a `from` for
+it is a guess. This is why the worked example has a `restInbound` row and no
+`rest` edge.
 
 `retries[].dltTarget` holds the DLT topic pattern, character-for-character equal
 to the `name` of the corresponding `dlt` node — that string equality is how the
-two join during the merge, so do not abbreviate one of them.
+two join during the merge, so do not abbreviate one of them. Because a `dlt` id
+is `dlt:` + that same name with the tenant placeholder normalised, the node id
+follows from `dltTarget` mechanically; if it does not, one of the two is wrong.
 
 `data/layout.js` (issue #5) is authoritative for grid position — do not put
 coordinates here.
@@ -506,6 +616,10 @@ substitutes for it.
 | `kind`, `group`, `generation`, `store`, `direction` ∈ their sets | `nodes[0].kind: "queue" is not valid` |
 | `generation` written unquoted is caught by name | `got number 3. Quote it: … Write `generation: "3.0"`` |
 | Edges have `from`, `to`, `transport`, `direction`; nodes have `id`, `name`, `kind` | `edges[0].to: missing` |
+| A `service` node's id is one of the fifteen slugs, naming the slug when the id is a known alias | `"ec-gateway" is not one of the fifteen … use "gateway"` |
+| An `external:` id names neither an in-scope service nor a known alias of one | `"external:pipeline-qualifier" names one of the fifteen …` |
+| A topic or DLT node's id matches the form derived from its own `name` (a **note**, not a failure) | `expected id "topic:ec.centralized.{tenant}.audit"` |
+| A `store:` or `external:` id outside the fixed sets is surfaced (a **note**) | `"store:AWS-S3" is not one of the four store nodes` |
 | No `null` and no empty string, at any depth | `retries[0].retryTopics[1]: is null` |
 | A conflict has ≥ 2 readings, each with a value and a source | `conflict has 1 reading(s)` |
 | The extract is plain, serialisable data | `nodes[0].itself: is a circular reference` |
@@ -527,8 +641,14 @@ stops at the first, and a broken entry never costs you the report on the rest.
 - [ ] No conflict resolved — both readings recorded with both sources
 - [ ] No conflict *invented* either — each one is two answers to one question,
       not a table and a paragraph wording the same fact differently
-- [ ] Node ids follow the fixed prefixes; store and external nodes only where
-      the rules above allow them
+- [ ] Every topic and DLT id is `topic:`/`dlt:` + that node's own `name` with the
+      tenant placeholder normalised to `{tenant}` — not the producer, not a
+      shortened segment
+- [ ] Every cross-service id is one of the fifteen slugs, not the name your
+      document happens to use for it (`ec-gateway` → `gateway`,
+      `Pipeline Qualifier` → `queue-qualifier`)
+- [ ] Store and external nodes only from the four and the three fixed ids;
+      anything else is a `stores[]` / `restOutbound[]` row plus an ambiguity
 - [ ] Every `source` names the section its fields actually came from; an entry
       drawing on two sections cites both
 - [ ] Nothing abbreviated: a name the document shortens with `...` is written out

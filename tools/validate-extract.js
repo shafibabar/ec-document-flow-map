@@ -84,17 +84,9 @@ const GENERATIONS = ['3.0', 'integrated', 'none', 'unknown'];
 /**
  * The `id` prefix each node kind must carry.
  *
- * `id` is the key Parent 2 joins fifteen extracts on, and the prefix is the only
- * part of it a tool can check. It is worth checking: review cycle 3 wrote trial
- * extracts of Indexer, Manual Run and Gateway from the schema document alone and
- * they produced `external:config-curator` for a service whose own extract will
- * produce `config-curator` — two nodes on the map for one service. The prefix
- * check does not catch that on its own, but it does catch the whole class of
- * "I invented a shape for this kind" mistakes, which is where the divergence
- * starts.
- *
- * A `service` node carries the bare slug, so it must have no prefix at all —
- * `external:gateway` and `gateway` are different keys.
+ * `id` is the key Parent 2 joins fifteen extracts on. A `service` node carries
+ * the bare slug, so it must have no prefix at all — `external:gateway` and
+ * `gateway` are different keys.
  */
 const ID_PREFIX = {
   topic: 'topic:',
@@ -102,6 +94,94 @@ const ID_PREFIX = {
   store: 'store:',
   external: 'external:'
 };
+
+/**
+ * The four store nodes and the three external nodes, from Parent #3.
+ *
+ * Fixed sets rather than free-form slugs, because both were producing several
+ * ids for one thing. Indexer and Manual Run call the identical endpoint
+ * `POST /v1/index/sup-archive/{tenant}/{source}` on a system one calls "Indexing
+ * Gateway" and the other "ea-indexing-gateway"; `external:` + slug-of-the-label
+ * gave two nodes. Neither `EA-S3` nor `EC-S3` appears in any of the 33
+ * documents at all — Parent #3 renamed them from the image.
+ *
+ * Advisory, not enforced: an extract that genuinely finds a fifth store or a
+ * fourth integrated system must be able to say so. See KNOWN_STORES for why a
+ * gate that rejects a faithful reading is the wrong tool here.
+ */
+const STORE_NODE_IDS = ['store:EA-S3', 'store:EC-S3', 'store:surveil.av5', 'store:review.v1'];
+const EXTERNAL_NODE_IDS = ['external:archive', 'external:cognition-analytics', 'external:derived-store'];
+
+/**
+ * Every name a document uses for one of the fifteen, mapped to its slug.
+ *
+ * Cycle 3 blocked `external:config-curator`, which is right and insufficient:
+ * **no document writes `config-curator`**. Sweeping the outbound REST tables
+ * across the corpus, the fifteen are referred to as `ec-gateway`,
+ * `alerting-service`, `central-audit`, `Pipeline Qualifier`,
+ * `ec-surveillance-quota-manager` and so on. The old check compared
+ * `id.replace(/^external:/, '')` against the slug list, so it rejected the one
+ * spelling an extractor is least likely to write and admitted every spelling the
+ * documents hand them.
+ *
+ * `Pipeline Qualifier` is the expensive one: Policy Evaluator, Quota Manager and
+ * Reporting all call Queue Qualifier that, and Parent #3 decided explicitly that
+ * they are one component.
+ *
+ * `central-audit` is `centralised-audit`, not `conduct-audit-service`: there are
+ * two audit services, and Manual Run's `POST /v1/tenants/{t}/source` is
+ * `ec-centralised-audit`'s `SourceController`.
+ */
+const SERVICE_ALIASES = {
+  'ec-gateway': 'gateway',
+  'ec-queue-qualifier': 'queue-qualifier',
+  'pipeline-qualifier': 'queue-qualifier',
+  'queue-pipeline-qualifier': 'queue-qualifier',
+  'ec-surveillance-pipeline-qualifier': 'queue-qualifier',
+  'ec-surveillance-filter': 'surveillance-filter',
+  'ec-surveillance-policy-evaluator': 'policy-evaluator',
+  'ec-policy-evaluator': 'policy-evaluator',
+  'ec-surveillance-quota-manager': 'quota-manager',
+  'ec-quota-manager': 'quota-manager',
+  'ec-indexer': 'indexer',
+  'ec-config-curator': 'config-curator',
+  'central-audit': 'centralised-audit',
+  'ec-centralised-audit': 'centralised-audit',
+  'centralized-audit': 'centralised-audit',
+  'ec-centralized-audit': 'centralised-audit',
+  'ec-conduct-audit-service': 'conduct-audit-service',
+  'conduct-audit': 'conduct-audit-service',
+  'alerting-service': 'alerting',
+  'ec-alerting-service': 'alerting',
+  'ec-echo-engine': 'echo-engine',
+  'manual-run-service': 'manual-run',
+  'manual-runs-service': 'manual-run',
+  'ec-manual-runs-service': 'manual-run',
+  'ec-manual-run-service': 'manual-run',
+  'ec-reporting': 'reporting',
+  'ec-review-service': 'review-service',
+  'ec-actioning': 'actioning'
+};
+
+/** Tenant placeholders the corpus uses, all normalised to `{tenant}` in an id. */
+const TENANT_TOKENS = ['tenant', 't', 'tenantname', 'tenantid', 'tenant_name'];
+
+/**
+ * The id form a topic or DLT node's own `name` implies.
+ *
+ * `topic:` + the name, with the tenant placeholder normalised. Derived from the
+ * name and nothing else, because the alternative — keying on the producer — puts
+ * four nodes on the map for `ec.centralized.{tenant}.audit`, which Echo Engine,
+ * Policy Evaluator and Queue Qualifier all publish and Reporting consumes.
+ */
+function normaliseTenant(name) {
+  return String(name)
+    .replace(/\{([^{}]*)\}|<([^<>]*)>/g, (m, a, b) => {
+      const inner = (a === undefined ? b : a).trim().toLowerCase();
+      return TENANT_TOKENS.includes(inner) ? '{tenant}' : m;
+    })
+    .replace(/%s/g, '{tenant}');
+}
 
 /**
  * Structural fields the merge in Parent 2 cannot work without.
@@ -207,29 +287,79 @@ function fail(file, where, msg) {
   problems.push(`${path.basename(file)}: ${where}: ${msg}`);
 }
 
+/** The slug a cross-service reference means, or null if it names none of them. */
+function resolveSlug(bare) {
+  const k = bare.trim().toLowerCase().replace(/\s+/g, '-');
+  if (SERVICE_IDS.includes(k)) return k;
+  return SERVICE_ALIASES[k] || null;
+}
+
 /**
- * Node ids must carry their kind's prefix, and must not shadow a known service.
+ * Node ids must carry their kind's prefix, must not shadow a known service under
+ * any of the names the documents use, and — for topics and DLTs — should be the
+ * form their own `name` implies.
  */
 function checkNodeId(file, where, entry) {
-  const { id, kind } = entry;
+  const { id, kind, name } = entry;
   if (typeof id !== 'string' || typeof kind !== 'string') return; // already diagnosed
   const prefix = ID_PREFIX[kind];
 
   if (kind === 'service') {
     if (id.includes(':')) {
-      fail(file, `${where}.id`, `a service node carries the bare slug, not "${id}" — ` +
+      return fail(file, `${where}.id`, `a service node carries the bare slug, not "${id}" — ` +
         '"gateway" and "external:gateway" are different merge keys');
+    }
+    if (!SERVICE_IDS.includes(id)) {
+      const slug = resolveSlug(id);
+      fail(file, `${where}.id`,
+        `"${id}" is not one of the fifteen canonical service slugs` +
+        (slug ? `. Use "${slug}" — the documents write it several ways and the id is the merge key.`
+              : '. If this is not one of the fifteen, it is not a service node: record the call ' +
+                'in restOutbound[] with an ambiguity and create no node.'));
     }
     return;
   }
   if (prefix && !id.startsWith(prefix)) {
     fail(file, `${where}.id`, `a ${kind} node's id must start with "${prefix}", got "${id}"`);
+    return;
   }
-  if (kind === 'external' && SERVICE_IDS.includes(id.replace(/^external:/, ''))) {
-    fail(file, `${where}.id`,
-      `"${id}" names one of the fifteen in-scope services. Use the bare slug ` +
-      `"${id.replace(/^external:/, '')}" and kind "service". ` +
-      '"external" means outside the estate, not merely outside this service.');
+  const bare = id.slice(prefix ? prefix.length : 0);
+
+  if (kind === 'external') {
+    const slug = resolveSlug(bare);
+    if (slug) {
+      fail(file, `${where}.id`,
+        `"${id}" names one of the fifteen in-scope services. Use the bare slug ` +
+        `"${slug}" and kind "service". ` +
+        '"external" means outside the estate, not merely outside this service.');
+    } else if (!EXTERNAL_NODE_IDS.includes(id)) {
+      // A note, not a failure: an extract that genuinely finds a fourth
+      // integrated system must be able to record it. But Parent #3 kept exactly
+      // three, and the Archive is reached under at least five different names.
+      notes.push(`${path.basename(file)}: ${where}.id: "${id}" is not one of the three ` +
+        `integrated systems (${EXTERNAL_NODE_IDS.join(', ')}). The Archive appears as ` +
+        '"EA Storage", "Indexing Gateway", "ea-indexing-gateway" and "Archive Elasticsearch" ' +
+        'and is one node. 2.0 components such as supervision.api are not drawn at all — ' +
+        'record them in restOutbound[] with an ambiguity.');
+    }
+  }
+
+  if (kind === 'store' && !STORE_NODE_IDS.includes(id)) {
+    notes.push(`${path.basename(file)}: ${where}.id: "${id}" is not one of the four store ` +
+      `nodes (${STORE_NODE_IDS.join(', ')}). Everything else belongs in stores[] with no ` +
+      'node and no edge. If your document does not say which S3 bucket this is, say so in ' +
+      'ambiguities rather than inventing an id.');
+  }
+
+  if ((kind === 'topic' || kind === 'dlt') && typeof name === 'string'
+      && name.trim() !== '' && name.trim().toLowerCase() !== 'unknown') {
+    const expected = prefix + normaliseTenant(name).trim();
+    if (id !== expected) {
+      notes.push(`${path.basename(file)}: ${where}.id: is "${id}"; the id derived from this ` +
+        `node's own name is "${expected}". The id is the merge key and is derived from the ` +
+        'topic name, never from who publishes it — a producer-keyed id gives ' +
+        'ec.centralized.{tenant}.audit four ids, one per publisher.');
+    }
   }
 }
 
