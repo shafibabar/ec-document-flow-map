@@ -218,34 +218,113 @@ var Sprites = (function () {
   }
 
   /*
-   * S3: a goods warehouse. Long shed, corrugated roof, a loading dock on the
-   * side facing the road — because on this map an S3 bucket is a place carts
-   * fetch documents from, not a passenger stop.
+   * A point on a solid's top face, parameterised across the rhombus: u runs
+   * along the north-to-east edge, v along north-to-west. Affine, so it lands
+   * exactly on the isometric plane — this is what lets roof furniture sit flat
+   * on a roof instead of hovering at a slightly wrong angle.
    */
-  function warehouse(ctx, canvas, stop, state, z) {
+  function topPoint(c, u, v) {
+    return { x: c.n.x + (c.e.x - c.n.x) * u + (c.w.x - c.n.x) * v,
+             y: c.n.y + (c.e.y - c.n.y) * u + (c.w.y - c.n.y) * v };
+  }
+
+  /*
+   * S3: a modern distribution facility with a solar roof. Two blocks — a tall
+   * main hall and a lower annex of roller-shutter bays — a band of blue glazing,
+   * and photovoltaic arrays covering the roof.
+   *
+   * The reason it is not a shed: an S3 bucket is where the estate's documents
+   * physically live, and it is the busiest building on the map. It should look
+   * like current infrastructure rather than a barn.
+   */
+  function s3Depot(ctx, canvas, stop, state, z) {
     var gx = stop.grid.x, gy = stop.grid.y;
-    var body = state === 'current' ? '#d8c8a4' : PALETTE.wallWarm;
+    var HW = 0.42, HH = 0.32, H = 30;
+    var wall = state === 'current' ? '#e4e9ee' : '#d6dce2';
+    var glassBlue = '#6f9dc4';
 
-    I.box(ctx, canvas, gx, gy, 0.44, 0.30, 4, PALETTE.stone);             // apron
-    I.box(ctx, canvas, gx, gy, 0.40, 0.26, 22, body, 4);                  // shed
-    I.roof(ctx, canvas, gx, gy, 0.44, 0.30, 26, 9, '#7d8794');            // shallow roof
+    I.box(ctx, canvas, gx, gy, HW + 0.14, HH + 0.14, 2, '#b7bdc3');       // apron
 
-    // Corrugation lines along the roof, and a dock opening on the near face.
-    var c = I.corners(gx, gy, 0.40, 0.26, canvas);
-    var dockA = I.up(c.w, 4), dockB = I.up(c.s, 4);
-    ctx.fillStyle = 'rgba(40,44,50,.55)';
-    ctx.beginPath();
-    ctx.moveTo(dockA.x + (dockB.x - dockA.x) * 0.28, dockA.y + (dockB.y - dockA.y) * 0.28);
-    ctx.lineTo(dockA.x + (dockB.x - dockA.x) * 0.72, dockA.y + (dockB.y - dockA.y) * 0.72);
-    ctx.lineTo(dockA.x + (dockB.x - dockA.x) * 0.72, dockA.y + (dockB.y - dockA.y) * 0.72 - 13 * z);
-    ctx.lineTo(dockA.x + (dockB.x - dockA.x) * 0.28, dockA.y + (dockB.y - dockA.y) * 0.28 - 13 * z);
-    ctx.closePath();
-    ctx.fill();
+    // --- the annex, on the side the rail leaves by ---------------------------
+    var ax = gx + HW + 0.16, ay = gy + 0.04;
+    I.box(ctx, canvas, ax, ay, 0.20, 0.28, 15, wall, 2);
+    I.box(ctx, canvas, ax, ay, 0.22, 0.30, 2, '#c3cad1', 17);             // parapet
+    var ac = I.corners(ax, ay, 0.20, 0.28, canvas);
+    var af = function (u, v) {
+      return facePoint(I.up(ac.w, 2), I.up(ac.s, 2), I.up(ac.w, 17), I.up(ac.s, 17), u, v);
+    };
+    for (var d = 0; d < 3; d++) {                                          // shutter bays
+      var u0 = 0.10 + d * 0.28;
+      faceQuad(ctx, af, u0, u0 + 0.20, 0.06, 0.62, '#9aa4ad');
+      for (var sl = 0; sl < 4; sl++) {
+        var vv = 0.12 + sl * 0.13;
+        I.poly(ctx, [af(u0, vv), af(u0 + 0.20, vv), af(u0 + 0.20, vv + 0.03), af(u0, vv + 0.03)],
+               '#88939d');
+      }
+    }
 
-    if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.6, '#f0a132', z);
+    // --- the main hall -------------------------------------------------------
+    I.box(ctx, canvas, gx, gy, HW, HH, H, wall, 2);
+    I.box(ctx, canvas, gx, gy, HW + 0.03, HH + 0.03, 3, '#c3cad1', H + 2);  // parapet
 
-    var top = I.up(I.toScreen(gx, gy, canvas), 4);
-    nameboard(ctx, top.x, top.y - 44 * z, stop.name, stop.tech, z);
+    // Glazing band, on both visible faces so the building reads as one storey
+    // of offices over the hall.
+    var c = I.corners(gx, gy, HW, HH, canvas);
+    var right = function (u, v) {
+      return facePoint(I.up(c.s, 2), I.up(c.e, 2), I.up(c.s, H + 2), I.up(c.e, H + 2), u, v);
+    };
+    var left = function (u, v) {
+      return facePoint(I.up(c.w, 2), I.up(c.s, 2), I.up(c.w, H + 2), I.up(c.s, H + 2), u, v);
+    };
+    [right, left].forEach(function (face) {
+      faceQuad(ctx, face, 0.06, 0.94, 0.58, 0.82, '#3f5f7d');
+      for (var i = 0; i < 7; i++) {
+        var w0 = 0.09 + i * 0.122;
+        faceQuad(ctx, face, w0, w0 + 0.088, 0.61, 0.79, glassBlue);
+      }
+    });
+
+    // The belt's mouth, on the face the conveyor arrives at.
+    faceQuad(ctx, left, 0.30, 0.62, 0.02, 0.34, '#232b31');
+    I.poly(ctx, [left(0.30, 0.34), left(0.62, 0.34), left(0.62, 0.375), left(0.30, 0.375)],
+           '#8d979f');
+
+    // --- solar arrays on the roof -------------------------------------------
+    var rc = I.corners(gx, gy, HW - 0.05, HH - 0.05, canvas);
+    var tc = { n: I.up(rc.n, H + 5), e: I.up(rc.e, H + 5),
+               s: I.up(rc.s, H + 5), w: I.up(rc.w, H + 5) };
+    for (var pu = 0; pu < 2; pu++) {
+      for (var pv = 0; pv < 3; pv++) {
+        var u1 = 0.06 + pu * 0.48, v1 = 0.05 + pv * 0.315;
+        var quad = [topPoint(tc, u1, v1), topPoint(tc, u1 + 0.42, v1),
+                    topPoint(tc, u1 + 0.42, v1 + 0.27), topPoint(tc, u1, v1 + 0.27)];
+        I.poly(ctx, quad, '#2f5c8a');
+        // Cell divisions, drawn in the panel's own two directions so they lie
+        // flat on the roof rather than across it.
+        ctx.strokeStyle = 'rgba(150,195,235,.55)';
+        ctx.lineWidth = Math.max(0.4, 0.9 * z);
+        ctx.beginPath();
+        for (var g = 1; g < 3; g++) {
+          var a1 = topPoint(tc, u1 + 0.42 * (g / 3), v1);
+          var a2 = topPoint(tc, u1 + 0.42 * (g / 3), v1 + 0.27);
+          ctx.moveTo(a1.x, a1.y); ctx.lineTo(a2.x, a2.y);
+        }
+        for (g = 1; g < 2; g++) {
+          var b1 = topPoint(tc, u1, v1 + 0.27 * (g / 2));
+          var b2 = topPoint(tc, u1 + 0.42, v1 + 0.27 * (g / 2));
+          ctx.moveTo(b1.x, b1.y); ctx.lineTo(b2.x, b2.y);
+        }
+        ctx.stroke();
+        I.poly(ctx, quad);                                   // panel edge
+        ctx.strokeStyle = '#9fb4c6';
+        ctx.stroke();
+      }
+    }
+
+    if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.72, '#f0a132', z);
+
+    var top = I.up(I.toScreen(gx, gy, canvas), 2);
+    nameboard(ctx, top.x, top.y - 62 * z, stop.name, stop.tech, z);
   }
 
   /*
@@ -637,6 +716,20 @@ var Sprites = (function () {
     }
   }
 
+  /*
+   * A stamped box riding the conveyor. Same isometric solid as everything else,
+   * with the metadata stamp on its lit top face so you can see it has been
+   * through the Archive's processing bay rather than just guess.
+   */
+  function beltBox(ctx, canvas, gx, gy, deck, z) {
+    I.box(ctx, canvas, gx, gy, 0.058, 0.042, 7, '#c2a06a', deck);
+    var c = I.corners(gx, gy, 0.058, 0.042, canvas);
+    var t = { n: I.up(c.n, deck + 7), e: I.up(c.e, deck + 7),
+              s: I.up(c.s, deck + 7), w: I.up(c.w, deck + 7) };
+    I.poly(ctx, [topPoint(t, 0.28, 0.28), topPoint(t, 0.72, 0.28),
+                 topPoint(t, 0.72, 0.72), topPoint(t, 0.28, 0.72)], '#efe3c8');
+  }
+
   function shadowBlob(ctx, x, y, rx, ry) {
     ctx.save();
     ctx.globalAlpha = 0.22;
@@ -670,9 +763,9 @@ var Sprites = (function () {
 
   return {
     PALETTE: PALETTE, identity: identity, assign: assign, hash: hash,
-    station: station, warehouse: warehouse, depot: depot, vault: vault,
+    station: station, s3Depot: s3Depot, depot: depot, vault: vault,
     siding: siding, terminus: terminus, external: external, archive: archive,
-    train: train, cart: cart, tree: tree,
+    train: train, cart: cart, beltBox: beltBox, tree: tree,
     nameboard: nameboard, roundRect: roundRect, shadowBlob: shadowBlob
   };
 })();

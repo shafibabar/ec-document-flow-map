@@ -112,20 +112,15 @@
     return k < 0.5 ? 2 * k * k : -1 + (4 - 2 * k) * k;
   }
 
-  function roadCarts(now) {
+  function roadCarts() {
     var here = st.phase === 'dwell' ? step(st.idx).at : null;
     var tint = step(st.idx).cargo.tint;
     var out = [];
     flow.tracks.forEach(function (t) {
       if (t.layer || t.from === t.to || !ROAD_TRANSPORT[t.transport]) return;
 
-      /*
-       * A shuttle runs whether or not the train is anywhere near — the Archive
-       * keeps stamping boxes and carting them to the bucket regardless of what
-       * the estate is doing with them. Every other road is worked only while
-       * the train is standing at one of its two ends.
-       */
-      if (!t.shuttle && t.from !== here && t.to !== here) return;
+      // A road is worked only while the train is standing at one of its ends.
+      if (t.from !== here && t.to !== here) return;
 
       var a = stopById(t.from), b = stopById(t.to);
       if (!a || !b) return;
@@ -144,39 +139,15 @@
       var len = Math.sqrt(dx * dx + dy * dy) || 1;
       var pad = Math.min(0.42, (t.dock === undefined ? 0.8 : t.dock) / len);
 
-      // Shuttles run on wall-clock time so they keep going through a pause;
-      // the rest run on the dwell clock so they stop when the story does.
-      var clock = t.shuttle ? now : st.t;
-      var run, load;
-
-      if (t.shuttle) {
-        /*
-         * A delivery round rather than a ping-pong: accelerate out, stand at
-         * the bucket long enough to unload, accelerate back, stand at the dock
-         * long enough to load again.
-         *
-         * `load` is a fraction, not a flag, and it only moves while the cart is
-         * stationary at one end. That is what turns "the box is suddenly there"
-         * into "the box is being put on" — the sprite reads the fraction and
-         * brings the crate in from the dock side over the length of the stop.
-         */
-        var cy = (clock % 7000) / 7000;
-        if (cy < 0.40)      { run = ease(cy / 0.40);                 load = 1; }
-        else if (cy < 0.50) { run = 1;    load = 1 - (cy - 0.40) / 0.10; }   // unloading
-        else if (cy < 0.90) { run = 1 - ease((cy - 0.50) / 0.40);    load = 0; }
-        else                { run = 0;    load = (cy - 0.90) / 0.10; }       // loading
-      } else {
-        var k = (clock % 5200) / 5200;
-        run = ease(k < 0.5 ? k * 2 : (1 - k) * 2);
-        load = 1;           // on the ordinary roads a cart fetches as well as delivers
-      }
-
+      // Runs on the dwell clock, so a cart stops when the story does.
+      var k = (st.t % 5200) / 5200;
+      var run = ease(k < 0.5 ? k * 2 : (1 - k) * 2);
       var e = pad + run * (1 - pad * 2);
       out.push({
         gx: a.grid.x + dx * e,
         gy: a.grid.y + dy * e,
-        tint: t.shuttle ? '#b08a4a' : tint,
-        load: load
+        tint: tint,
+        load: 1            // on these roads a cart fetches as well as delivers
       });
     });
     return out;
@@ -288,7 +259,7 @@
       dpr: st.dpr,
       now: now,
       cart: cart,
-      carts: roadCarts(now),
+      carts: roadCarts(),
       activeTrack: activeTrack(),
       stopState: stopStateFor,
       hideLayers: st.hideLayers

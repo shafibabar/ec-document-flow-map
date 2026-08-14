@@ -206,6 +206,73 @@ var Render = (function () {
     stroke(ctx, pts, active ? C.railHot : C.roadLine, 1.4 * w, [5 * w, 6 * w]);
   }
 
+  /*
+   * A conveyor belt, and the stream of boxes riding it.
+   *
+   * Drawn in the flat pass, before any building — which is precisely what makes
+   * the boxes emerge from inside the Archive and vanish inside EA-S3. Both
+   * buildings are painted afterwards and simply cover the ends of the run, so
+   * no fade or clip is needed and the depth tie along this axis stops mattering.
+   */
+  function drawBelt(ctx, canvas, flow, a, b, now, z) {
+    var p = Iso.toScreen(a.grid.x, a.grid.y, canvas);
+    var q = Iso.toScreen(b.grid.x, b.grid.y, canvas);
+    var deck = 9;                                          // belt height, world px
+    var pd = { x: p.x, y: p.y - deck * z }, qd = { x: q.x, y: q.y - deck * z };
+
+    // Trestles, every so often along the run.
+    var dxg = b.grid.x - a.grid.x, dyg = b.grid.y - a.grid.y;
+    var legs = 9;
+    for (var i = 1; i < legs; i++) {
+      var lg = Iso.toScreen(a.grid.x + dxg * (i / legs), a.grid.y + dyg * (i / legs), canvas);
+      ctx.strokeStyle = '#6a7178';
+      ctx.lineWidth = 2.2 * z;
+      ctx.beginPath();
+      ctx.moveTo(lg.x, lg.y);
+      ctx.lineTo(lg.x, lg.y - deck * z);
+      ctx.stroke();
+    }
+
+    stroke(ctx, [pd, qd], '#4b5157', 13 * z);              // belt bed
+    stroke(ctx, [pd, qd], '#6d757c', 10 * z);              // running surface
+
+    // Roller ticks across the belt, sliding along it so the belt reads as
+    // moving even where there is no box on it.
+    var vx = qd.x - pd.x, vy = qd.y - pd.y;
+    var len = Math.sqrt(vx * vx + vy * vy) || 1;
+    var nx = -vy / len, ny = vx / len;
+    var spacing = 11 * z;
+    var slide = ((now || 0) / 34) % spacing;
+    ctx.strokeStyle = 'rgba(30,36,41,.45)';
+    ctx.lineWidth = 1.2 * z;
+    ctx.beginPath();
+    for (var d = slide; d < len; d += spacing) {
+      var cx = pd.x + vx * (d / len), cy = pd.y + vy * (d / len);
+      ctx.moveTo(cx - nx * 5 * z, cy - ny * 5 * z);
+      ctx.lineTo(cx + nx * 5 * z, cy + ny * 5 * z);
+    }
+    ctx.stroke();
+
+    stroke(ctx, [pd, qd], '#868e95', 1.4 * z);             // side rail highlight
+
+    /*
+     * The stream. BOXES boxes evenly spaced around the loop, so each gap is
+     * three box-lengths — the run is extended a little past both buildings so a
+     * box is always already on the belt when it comes out from behind the
+     * Archive, rather than winking into existence at its wall.
+     */
+    // The overshoot is asymmetric because the buildings are: the Archive is
+    // large and swallows a box well before its centre, while EA-S3 is smaller,
+    // so a box that ran as far into it would come out the far side.
+    var BOXES = 9, IN = 0.12, OUT = 0.06;
+    var phase = ((now || 0) / 9000) % (1 / BOXES);
+    for (i = 0; i < BOXES; i++) {
+      var e = -IN + (phase + i / BOXES) * (1 + IN + OUT);
+      if (e > 1 + OUT) continue;
+      Sprites.beltBox(ctx, canvas, a.grid.x + dxg * e, a.grid.y + dyg * e, deck, z);
+    }
+  }
+
   /** The retry loop: a rail that leaves a station and comes back to it. */
   function loopPoints(canvas, stop) {
     var pts = [];
@@ -216,7 +283,7 @@ var Render = (function () {
     return pts;
   }
 
-  function drawTrack(ctx, canvas, flow, track, active) {
+  function drawTrack(ctx, canvas, flow, track, active, now) {
     var a = stopById(flow, track.from), b = stopById(flow, track.to);
     if (!a || !b) return;
     var z = Iso.cam.zoom;
@@ -224,6 +291,11 @@ var Render = (function () {
 
     if (track.transport === 'retry') {
       drawRail(ctx, canvas, loopPoints(canvas, a), active, true, false, z);
+      return;
+    }
+
+    if (track.transport === 'belt') {
+      drawBelt(ctx, canvas, flow, a, b, now, z);
       return;
     }
 
@@ -258,7 +330,7 @@ var Render = (function () {
     if (stop.kind === 'external') return Sprites.external(ctx, canvas, stop, state, z);
     if (stop.kind === 'depot') {
       return stop.tech === 'MongoDB' ? Sprites.vault(ctx, canvas, stop, state, z)
-                                     : Sprites.warehouse(ctx, canvas, stop, state, z);
+                                     : Sprites.s3Depot(ctx, canvas, stop, state, z);
     }
     return Sprites.station(ctx, canvas, stop, state, z);
   }
@@ -344,7 +416,7 @@ var Render = (function () {
 
     flow.tracks.forEach(function (t) {
       if (t.layer && state.hideLayers) return;
-      drawTrack(ctx, canvas, flow, t, state.activeTrack === t.from + '>' + t.to);
+      drawTrack(ctx, canvas, flow, t, state.activeTrack === t.from + '>' + t.to, state.now);
     });
 
     /*

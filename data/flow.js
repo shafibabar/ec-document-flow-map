@@ -129,15 +129,15 @@
   //          | retry (a loop siding back into the same station) | dlt (a dead end)
   var TRACKS = [
     /*
-     * Archive -> EA-S3. A road, not a rail, and for the usual reason: no Kafka
-     * topic carries it. Boxes are stamped with metadata in the Archive's
-     * processing bay and carted over to the bucket, and the cart comes back
-     * empty for the next load — which is why this one runs continuously rather
-     * than only while the train is standing somewhere.
+     * Archive -> EA-S3. A conveyor, not a rail and not a road: no Kafka topic
+     * carries it, and it never stops. Boxes are stamped with metadata in the
+     * Archive's processing bay and ride the belt straight into the bucket in a
+     * continuous stream — which is a truer picture of a bulk feed than a cart
+     * shuttling one crate at a time ever was.
      *
      * Sourced to the repo owner. See the note on the archive stop above.
      */
-    { from: 'archive',   to: 'ea-s3',     transport: 'road', shuttle: true,
+    { from: 'archive',   to: 'ea-s3',     transport: 'belt',
       topic: 'archived documents -> EA S3 bucket',
       src: 'repo owner (not in knowledge/)' },
 
