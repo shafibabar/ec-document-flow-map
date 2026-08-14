@@ -462,9 +462,10 @@ var Sprites = (function () {
     // back a cart onto, not the parade ground the first version had.
     I.box(ctx, canvas, gx + 0.20, gy - 0.20, HW + 0.04, HH + 0.04, 2, '#b9bfc4');
 
-    // Ground-level plant, on the apron beside the building.
+    // Ground-level plant, on the apron and set to one side — the conveyor
+    // leaves along x = gx, and these used to straddle it.
     for (var p = 0; p < 3; p++) {
-      I.box(ctx, canvas, gx - 0.16 + p * 0.24, gy - 0.58, 0.10, 0.10, 6, '#8d959c', 2);
+      I.box(ctx, canvas, gx + 0.34 + p * 0.16, gy - 0.42, 0.06, 0.06, 6, '#8d959c', 2);
     }
 
     I.box(ctx, canvas, gx, gy, HW, HH, H, wall, 2);      // the block itself

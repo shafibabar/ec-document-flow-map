@@ -220,9 +220,11 @@ var Render = (function () {
     var deck = 9;                                          // belt height, world px
     var pd = { x: p.x, y: p.y - deck * z }, qd = { x: q.x, y: q.y - deck * z };
 
-    // Trestles, every so often along the run.
+    // Trestles, spaced by the run's actual length rather than a fixed count —
+    // a short belt with nine legs is a fence.
     var dxg = b.grid.x - a.grid.x, dyg = b.grid.y - a.grid.y;
-    var legs = 9;
+    var lenG = Math.sqrt(dxg * dxg + dyg * dyg) || 1;
+    var legs = Math.max(3, Math.round(lenG * 2.5));
     for (var i = 1; i < legs; i++) {
       var lg = Iso.toScreen(a.grid.x + dxg * (i / legs), a.grid.y + dyg * (i / legs), canvas);
       ctx.strokeStyle = '#6a7178';
@@ -256,15 +258,23 @@ var Render = (function () {
     stroke(ctx, [pd, qd], '#868e95', 1.4 * z);             // side rail highlight
 
     /*
-     * The stream. BOXES boxes evenly spaced around the loop, so each gap is
-     * three box-lengths — the run is extended a little past both buildings so a
-     * box is always already on the belt when it comes out from behind the
-     * Archive, rather than winking into existence at its wall.
+     * The stream. The run is extended past both buildings so a box is already
+     * on the belt when it comes out from behind the Archive, rather than
+     * winking into existence at its wall. The overshoot is asymmetric because
+     * the buildings are: the Archive is the larger block and swallows a box
+     * well before its centre, while a box run as deep into EA-S3 would come out
+     * the far side.
+     *
+     * The box count is derived, not fixed. The gap is meant to be three
+     * box-lengths, and a box's length along the run depends on which way the
+     * run goes — a belt along the grid's y axis presents the box's short side,
+     * one along x its long side. A hard-coded count that looked right on one
+     * bearing came out crowded on another.
      */
-    // The overshoot is asymmetric because the buildings are: the Archive is
-    // large and swallows a box well before its centre, while EA-S3 is smaller,
-    // so a box that ran as far into it would come out the far side.
-    var BOXES = 9, IN = 0.12, OUT = 0.06;
+    var IN = 0.12, OUT = 0.06;
+    var ux = Math.abs(dxg / lenG), uy = Math.abs(dyg / lenG);
+    var boxLen = 2 * (ux * 0.058 + uy * 0.042);            // grid units along the run
+    var BOXES = Math.max(2, Math.round((lenG * (1 + IN + OUT)) / (boxLen * 4)));
     var phase = ((now || 0) / 9000) % (1 / BOXES);
     for (i = 0; i < BOXES; i++) {
       var e = -IN + (phase + i / BOXES) * (1 + IN + OUT);

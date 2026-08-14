@@ -52,9 +52,20 @@
    */
   var STOPS = [
     /*
-     * The Archive. Set out at (-3,7) — three cells due left of EA-S3 on screen,
-     * and clear of the y = 4 main line, so it reads as somewhere the estate
-     * draws FROM rather than a stop on the estate's own journey.
+     * The Archive, at (0,6): two cells from EA-S3 along a single grid axis, so
+     * EA-S3 sits up and to the right of it and the conveyor between them runs
+     * at 90 degrees to both buildings' walls.
+     *
+     * That single-axis constraint is the whole point, and it is easy to get
+     * wrong. A building's walls lie along the grid axes, so a wall's normal is
+     * a pure +x or +y. A belt offset diagonally — two cells on BOTH axes —
+     * leaves through the corner of the building at 45 degrees to either wall,
+     * which is exactly what looked awkward before. Only a pure-axis run comes
+     * squarely out of a wall.
+     *
+     * (-x would have worked geometrically too, but it puts the Archive on the
+     * y = 4 row, which is the pipeline's own line, and the Archive must not
+     * read as a stop on it.)
      *
      * PROVENANCE, stated plainly because this is the one edge on the map that
      * does not come from knowledge/:
@@ -72,7 +83,7 @@
      *   to them below rather than to a file that does not say it. If a document
      *   turns up that describes this hand-off, replace the src with it.
      */
-    { id: 'archive',    name: 'Archive',             kind: 'archive', tech: 'external',      grid: { x: -3, y: 7 },
+    { id: 'archive',    name: 'Archive',             kind: 'archive', tech: 'external',      grid: { x: 0, y: 6 },
       role: 'External system of record' },
 
     // --- the main line, y = 4, west to east ---------------------------------
