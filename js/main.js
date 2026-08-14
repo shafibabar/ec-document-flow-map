@@ -147,25 +147,28 @@
       // Shuttles run on wall-clock time so they keep going through a pause;
       // the rest run on the dwell clock so they stop when the story does.
       var clock = t.shuttle ? now : st.t;
-      var run, loaded;
+      var run, load;
 
       if (t.shuttle) {
         /*
-         * A real delivery round rather than a ping-pong: accelerate out, stand
-         * at the bucket long enough to unload, accelerate back, stand at the
-         * dock long enough to load again. The previous version reversed
-         * instantly at each end, which is what made it look mechanical.
+         * A delivery round rather than a ping-pong: accelerate out, stand at
+         * the bucket long enough to unload, accelerate back, stand at the dock
+         * long enough to load again.
+         *
+         * `load` is a fraction, not a flag, and it only moves while the cart is
+         * stationary at one end. That is what turns "the box is suddenly there"
+         * into "the box is being put on" — the sprite reads the fraction and
+         * brings the crate in from the dock side over the length of the stop.
          */
         var cy = (clock % 7000) / 7000;
-        if (cy < 0.40)      { run = ease(cy / 0.40); }
-        else if (cy < 0.50) { run = 1; }                       // unloading
-        else if (cy < 0.90) { run = 1 - ease((cy - 0.50) / 0.40); }
-        else                { run = 0; }                       // loading
-        loaded = cy < 0.45 || cy >= 0.95;
+        if (cy < 0.40)      { run = ease(cy / 0.40);                 load = 1; }
+        else if (cy < 0.50) { run = 1;    load = 1 - (cy - 0.40) / 0.10; }   // unloading
+        else if (cy < 0.90) { run = 1 - ease((cy - 0.50) / 0.40);    load = 0; }
+        else                { run = 0;    load = (cy - 0.90) / 0.10; }       // loading
       } else {
         var k = (clock % 5200) / 5200;
         run = ease(k < 0.5 ? k * 2 : (1 - k) * 2);
-        loaded = true;      // on the ordinary roads a cart fetches as well as delivers
+        load = 1;           // on the ordinary roads a cart fetches as well as delivers
       }
 
       var e = pad + run * (1 - pad * 2);
@@ -173,7 +176,7 @@
         gx: a.grid.x + dx * e,
         gy: a.grid.y + dy * e,
         tint: t.shuttle ? '#b08a4a' : tint,
-        loaded: loaded
+        load: load
       });
     });
     return out;

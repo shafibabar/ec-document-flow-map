@@ -35,9 +35,9 @@ var Render = (function () {
     rail:      '#cdd6de',
     railDark:  '#5c6672',
     railHot:   '#f0a132',
-    road:      '#a99c86',
-    roadEdge:  '#8b8071',
-    roadLine:  '#e8e2d2',
+    road:      '#4f545b',
+    roadEdge:  '#3b3f45',
+    roadLine:  '#e2ddcb',
     dead:      '#8a4f4a',
     deadHot:   '#e05252',
     faint:     '#7d8a74'
@@ -368,7 +368,7 @@ var Render = (function () {
     });
     (state.carts || []).forEach(function (c) {
       drawables.push({ key: c.gx + c.gy + 0.01, paint: function () {
-        Sprites.cart(ctx, canvas, c.gx, c.gy, c.tint, z, c.loaded);
+        Sprites.cart(ctx, canvas, c.gx, c.gy, c.tint, z, c.load);
       } });
     });
     if (state.cart) {

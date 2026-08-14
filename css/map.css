@@ -128,8 +128,8 @@ body.failing .timer { color: #9c3524; }
 .rail { width: 22px; height: 0; border-top: 3px solid #6d5942; flex: none; }
 .rail.kafka { border-top-width: 4px; border-color: #8a8172; }
 .rail.cdc { border-top-style: dashed; border-color: #8a8172; }
-.rail.road { border-top-width: 5px; border-color: #a99c86; }
-.rail.owner { border-top-width: 5px; border-color: #b08a4a; }
+.rail.road { border-top-width: 5px; border-color: #4f545b; }
+.rail.owner { border-top-width: 5px; border-color: #4f545b; border-top-style: double; }
 .rail.retry { border-color: #c0392b; }
 .rail.dlt { border-top-style: dashed; border-color: #8a4f4a; }
 .rail.terminus { border-top-style: dashed; border-color: #6b7280; }

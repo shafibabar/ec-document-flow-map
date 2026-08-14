@@ -449,17 +449,9 @@ var Sprites = (function () {
     I.poly(ctx, glass);
     ctx.stroke();
 
-    // --- the ARCHIVE sign -----------------------------------------------------
-    var plaque = faceQuad(ctx, f, 0.63, 0.955, 0.50, 0.72, '#123f36');
-    ctx.strokeStyle = '#5fe0bd';
-    ctx.lineWidth = Math.max(0.7, 1.6 * z);
-    I.poly(ctx, plaque);
-    ctx.stroke();
-    var pc = f(0.79, 0.61);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#8ff0d4';
-    ctx.font = '800 ' + Math.max(7, 11 * z) + 'px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText('ARCHIVE', pc.x, pc.y + 4 * z);
+    // No lettering on the wall. The nameboard above the building already says
+    // what this is, and a second ARCHIVE painted on the brickwork read as a
+    // label stuck onto the model rather than part of it.
 
     // --- the shutter bay: where boxes are stamped before they go out ----------
     faceQuad(ctx, f, 0.66, 0.94, 0.03, 0.40, '#1b2429');            // the opening
@@ -498,7 +490,7 @@ var Sprites = (function () {
     if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.82, '#f0a132', z);
 
     var top = I.up(I.toScreen(gx, gy, canvas), 2);
-    nameboard(ctx, top.x, top.y - 74 * z, stop.name, stop.role || 'external', z);
+    nameboard(ctx, top.x, top.y - 74 * z, stop.name, null, z);
   }
 
   /** A soft ring on the ground marking the stop the document is at now. */
@@ -601,38 +593,48 @@ var Sprites = (function () {
    * it while the train is standing — the last few metres a document travels are
    * by road, not by rail.
    */
-  function cart(ctx, canvas, gx, gy, tint, z, loaded) {
+  /*
+   * A road cart, built out of the same isometric solids as the buildings.
+   *
+   * It used to be screen-space rounded rectangles, which is why it looked like
+   * it had been cut out of a different drawing: a rectangle does not sit on a
+   * 30-degree grid, so the cart read as flat-on while everything around it read
+   * as three-quarter view. Boxes on the grid fix that — the deck and the crate
+   * now share their vanishing directions and their light source with every
+   * warehouse on the map.
+   *
+   * `load` is 0..1 rather than a boolean, so the crate can be seen arriving
+   * rather than appearing. At 0 it is off the deck and back toward the dock; at
+   * 1 it is squarely on the bed. The engine sweeps it through the middle while
+   * the cart stands still.
+   */
+  function cart(ctx, canvas, gx, gy, tint, z, load) {
+    var L = load === undefined ? 1 : Math.max(0, Math.min(1, load));
     var c = I.toScreen(gx, gy, canvas);
-    shadowBlob(ctx, c.x, c.y, 10 * z, 4 * z);
-    var w = 15 * z, y0 = c.y - 3 * z;
 
-    // A flat bed rather than a solid block, so "carrying something" and
-    // "coming back empty" are actually different silhouettes.
-    var bed = 4.5 * z;
-    roundRect(ctx, c.x - w / 2, y0 - bed, w, bed, 1.2 * z);
-    ctx.fillStyle = '#8a7a5e'; ctx.fill();
+    shadowBlob(ctx, c.x, c.y, 11 * z, 4.5 * z);
 
-    if (loaded !== false) {
-      var h = 8 * z;
-      roundRect(ctx, c.x - w * 0.38, y0 - bed - h, w * 0.76, h, 1.4 * z);
-      ctx.fillStyle = tint || '#c9a227'; ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,.3)';
-      ctx.lineWidth = Math.max(0.4, 0.8 * z);
-      roundRect(ctx, c.x - w * 0.38, y0 - bed - h, w * 0.76, h, 1.4 * z);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,.35)';   // strapping
+    I.box(ctx, canvas, gx, gy, 0.100, 0.072, 3, '#3d434a');          // chassis
+    I.box(ctx, canvas, gx, gy, 0.112, 0.082, 2, '#8a7a5e', 3);       // deck
+
+    ctx.fillStyle = '#23282e';                                       // wheels
+    [[-0.075, 0.055], [0.075, -0.055]].forEach(function (o) {
+      var w = I.toScreen(gx + o[0], gy + o[1], canvas);
       ctx.beginPath();
-      ctx.moveTo(c.x, y0 - bed - h);
-      ctx.lineTo(c.x, y0 - bed);
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = '#2a2f36';
-    [-0.28, 0.28].forEach(function (f) {
-      ctx.beginPath();
-      ctx.arc(c.x + w * f, y0, 2.2 * z, 0, Math.PI * 2);
+      ctx.ellipse(w.x, w.y - 1.5 * z, 3.2 * z, 1.8 * z, 0, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    if (L > 0.015) {
+      // The crate travels in along the dock direction and settles onto the bed.
+      var away = (1 - L) * 0.16;
+      var lift = (1 - L) * 13;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, L * 1.6);
+      I.box(ctx, canvas, gx - away, gy + away, 0.062, 0.045, 8,
+            tint || '#c9a227', 5 + lift);
+      ctx.restore();
+    }
   }
 
   function shadowBlob(ctx, x, y, rx, ry) {
