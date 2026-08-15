@@ -114,9 +114,20 @@ var Render = (function () {
    * `ga` and `gb` are grid points, already trimmed back to each stop's apron
    * by the caller — this function no longer knows about stops at all.
    */
-  function edgePoints(canvas, ga, gb, bow) {
+  function edgePoints(canvas, ga, gb, bow, ctrl) {
     var p = Iso.toScreen(ga.x, ga.y, canvas);
     var q = Iso.toScreen(gb.x, gb.y, canvas);
+    if (ctrl) {
+      // A curve with a chosen control point, sampled in GRID space and then
+      // projected — projecting the control point and curving in screen space
+      // would bend it off the isometric plane.
+      var pts = [];
+      for (var j = 0; j <= 24; j++) {
+        var g = Iso.quadPoint(ga, ctrl, gb, j / 24);
+        pts.push(Iso.toScreen(g.x, g.y, canvas));
+      }
+      return pts;
+    }
     if (!bow) return [p, q];
     var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
     var vx = q.x - p.x, vy = q.y - p.y;
@@ -246,6 +257,7 @@ var Render = (function () {
     external: [0.36, 0.32],
     archive:  [0.64, 0.50],
     archway:  [0, 0],          // the line runs THROUGH it, so never trimmed
+    sorting:  [0.52, 0.52],
     edge:     [0, 0]
   };
 
@@ -288,6 +300,11 @@ var Render = (function () {
         // Externals are the end of a spur, not somewhere a train runs through,
         // so they keep their cell and get their rail trimmed instead.
         var through = (s.kind === 'station' || s.kind === 'terminus');
+        // An explicit aside in the data always wins: the automatic rule keys on
+        // a stop's dominant rail axis, which is the wrong answer whenever a
+        // stop's long-haul rails point somewhere other than the track it
+        // actually stands beside.
+        if (s.aside) { asideCache[s.id] = s.aside; return; }
         asideCache[s.id] = (!through || (a.x === 0 && a.y === 0)) ? { x: 0, y: 0 }
           : (a.x >= a.y ? { x: 0, y: -ASIDE } : { x: -ASIDE, y: 0 });
       });
@@ -448,7 +465,7 @@ var Render = (function () {
       ga = placed(flow, a);
       gb = placed(flow, b);
     }
-    var pts = edgePoints(canvas, ga, gb, track.bow);
+    var pts = edgePoints(canvas, ga, gb, track.bow, track.ctrl);
 
     /*
      * Config sync and audit plumbing. Real edges, but not the document's
@@ -472,6 +489,7 @@ var Render = (function () {
 
   function drawStop(ctx, canvas, stop, state, z, t) {
     if (stop.kind === 'edge') return;                    // a bare end of line
+    if (stop.kind === 'sorting') return Sprites.sortingStation(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'archive') return Sprites.archive(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'station') return Sprites.station(ctx, canvas, stop, state, z);
     if (stop.kind === 'yard') return Sprites.depot(ctx, canvas, stop, state, z);

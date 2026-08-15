@@ -113,17 +113,29 @@
      * in knowledge/ describes a railway out of the Archive. Marked `scene` so
      * the tooling can tell them apart from the modelled estate.
      */
-    { id: 'line-in',      name: '',        kind: 'edge',    tech: '',
-      grid: { x: 1.55, y: 5.9 },  scene: true },
     { id: 'gateway',      name: 'Gateway', kind: 'archway', tech: 'k8s',
-      grid: { x: 1.55, y: 9.4 } },
-    { id: 'line-out',     name: '',        kind: 'edge',    tech: '',
-      grid: { x: 1.55, y: 12.2 }, scene: true },
+      grid: { x: 1.55, y: 10.4 } },
+
+    /*
+     * Queue Qualifier, the next service onto the new line.
+     *
+     * It sits above the track — aside is set explicitly here rather than left to
+     * the automatic rule, which keys on a stop's dominant rail axis and would
+     * have put it up-LEFT: its rails back to Surveillance Filter are still long
+     * and northbound and outvote the short eastbound track it actually stands
+     * beside. Above means -y, which is also toward smaller gx + gy, so the
+     * building sits behind the line and the track stays in the foreground.
+     */
+    { id: 'qualifier',  name: 'Queue Qualifier',     kind: 'sorting', tech: 'k8s',
+      grid: { x: 6.5, y: 13.8 }, aside: { x: 0, y: -0.72 } },
 
     // --- the main line, y = 4, west to east ---------------------------------
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
-    { id: 'qualifier',  name: 'Queue Qualifier',     kind: 'station', tech: 'K8s',           grid: { x: 4, y: 4 } },
-    { id: 'filter',     name: 'Surveillance Filter', kind: 'station', tech: 'K8s',           grid: { x: 6, y: 4 } },
+    // Aside pinned rather than computed: with Queue Qualifier now far to the
+    // south, the automatic rule saw a dominant y axis and swung this building
+    // off to the -x side, out of step with the rest of the y = 4 row.
+    { id: 'filter',     name: 'Surveillance Filter', kind: 'station', tech: 'K8s',           grid: { x: 6, y: 4 },
+      aside: { x: 0, y: -0.72 } },
     { id: 'evaluator',  name: 'Policy Evaluator',    kind: 'station', tech: 'K8s',           grid: { x: 8, y: 4 } },
     { id: 'indexer',    name: 'Indexer',             kind: 'station', tech: 'K8s',           grid: { x: 10, y: 4 } },
     { id: 'surveil',    name: 'surveil.av5',         kind: 'yard',    tech: 'Elasticsearch', grid: { x: 12, y: 4 },
@@ -133,7 +145,7 @@
     // Each one hangs straight down on screen (dx === dy) from its own station,
     // so a spur can never be mistaken for a continuation of the journey.
     { id: 'ec-s3',      name: 'EC-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 3, y: 5 } },
-    { id: 'qualifier-dlt', name: '{topic}-dlt',      kind: 'siding',  tech: 'Kafka',         grid: { x: 5, y: 5 },
+    { id: 'qualifier-dlt', name: '{topic}-dlt',      kind: 'siding',  tech: 'Kafka',         grid: { x: 7.5, y: 14.8 },
       role: 'Dead Letter Topic' },
     { id: 'review',     name: 'review.v1',           kind: 'yard',    tech: 'Elasticsearch', grid: { x: 11, y: 5 },
       role: 'Violation Depot' },
@@ -188,27 +200,41 @@
      *
      * Sourced to the repo owner. See the note on the archive stop above.
      */
-    /*
-     * One straight run along x = 1.55, past the Archive's platform and on
-     * through the archway. Two tracks rather than one so the archway sits
-     * between them in the model as well as on screen.
-     */
-    { from: 'line-in',      to: 'gateway',      transport: 'rail', scene: true,
-      topic: 'the line past the Archive platform' },
-    { from: 'gateway',      to: 'line-out',     transport: 'rail', scene: true,
-      topic: 'beyond the Gateway' },
-
     { from: 'archive',   to: 'ea-s3',     transport: 'belt',
       topic: 'archived documents -> EA S3 bucket',
       src: 'repo owner (not in knowledge/)' },
 
+    /*
+     * Into the arch, and out round the corner.
+     *
+     * Both carry a `ctrl` point, which makes them quadratic curves whose
+     * tangents are chosen rather than incidental: each one arrives at or leaves
+     * Gateway travelling along x = 1.55, the axis the archway's piers straddle,
+     * so the train actually runs between them instead of cutting across at an
+     * angle. The control point is simply where the two tangent lines meet.
+     *
+     * The second is the 90-degree turn: it leaves the arch heading down-left on
+     * +y and comes out of the curve heading down-right on +x, which is the
+     * bearing Queue Qualifier stands on.
+     */
     { from: 'ea-s3',     to: 'gateway',   transport: 'kafka',
+      ctrl: { x: 1.55, y: 4 },
       topic: 'supBulkIndexingTopic_k8s' },
     { from: 'gateway',   to: 'ec-s3',     transport: 's3',
       topic: 'miniIndexable.json upload' },
     { from: 'gateway',   to: 'qualifier', transport: 'cdc',
+      ctrl: { x: 1.55, y: 13.8 },
       topic: 'ec.surveillance-gateway.outbox.{tenant}.ingestedCommunication' },
+    /*
+     * Out of Queue Qualifier heading east along its own platform, then a long
+     * curve north to Surveillance Filter. It has to be a curve: the station
+     * stepped ABOVE its track, and a straight rail to the filter — which is
+     * also north — would leave the platform and go through the building behind
+     * it. Of the control points that clear everything, this is the one that
+     * departs FORWARD along the track rather than reversing out.
+     */
     { from: 'qualifier', to: 'filter',    transport: 'kafka',
+      ctrl: { x: 11, y: 13 },
       topic: 'ec.surveillance-qualifier.{tenant}.qualifications' },
     { from: 'filter',    to: 'evaluator', transport: 'kafka',
       topic: 'ec.surveillance-filter.{tenant}.evaluations' },

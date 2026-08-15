@@ -625,9 +625,11 @@ var Sprites = (function () {
    */
   function platformStrip(ctx, canvas, stop, aside, z) {
     var gx = stop.grid.x + aside.x, gy = stop.grid.y + aside.y;
+    // Long in the direction the trains run, narrow across it — the Archive's
+    // platform is shaped the same way and for the same reason.
     var alongX = aside.y !== 0;                    // stepped off an x-axis line
-    var hw = alongX ? 0.50 : Math.abs(aside.x) / 2 + 0.10;
-    var hh = alongX ? Math.abs(aside.y) / 2 + 0.10 : 0.50;
+    var hw = alongX ? 0.72 : Math.abs(aside.x) / 2 + 0.06;
+    var hh = alongX ? Math.abs(aside.y) / 2 + 0.06 : 0.72;
     var cx = alongX ? gx : gx + Math.abs(aside.x) / 2;
     var cy = alongX ? gy + Math.abs(aside.y) / 2 : gy;
 
@@ -641,6 +643,83 @@ var Sprites = (function () {
     ctx.moveTo(e1.x, e1.y);
     ctx.lineTo(e2.x, e2.y);
     ctx.stroke();
+  }
+
+  /*
+   * Queue Qualifier: a station whose job is written into its architecture.
+   *
+   * The service takes a communication and decides which of the tenant's
+   * pipelines it belongs to — it sorts a queue. So the building carries a
+   * sorting gate: a gantry over the platform with three semaphore arms that
+   * drop in sequence, and a departure-board display whose rows advance. Both
+   * animate off the same clock, which is what makes it read as machinery
+   * working rather than decoration bolted on.
+   *
+   * Everything else follows the Archive's arrangement — the building set back,
+   * a platform between it and the track, and its name on the standard board
+   * rather than painted across the wall.
+   */
+  function sortingStation(ctx, canvas, stop, state, z, t) {
+    var gx = stop.grid.x, gy = stop.grid.y;
+    var HW = 0.44, HH = 0.30, H = 30;
+    var wall = state === 'current' ? '#e6dcc9' : PALETTE.wall;
+    var accent = state === 'current' ? '#f0a132' : '#b5842f';
+    var beat = ((t || 0) % 2600) / 2600;
+
+    I.box(ctx, canvas, gx, gy, HW + 0.10, HH + 0.10, 2, PALETTE.stone);   // apron
+    I.box(ctx, canvas, gx, gy, HW, HH, H, wall, 2);                       // hall
+    I.roof(ctx, canvas, gx, gy, HW + 0.06, HH + 0.06, H + 2, 13, accent);
+
+    // --- the departure board, on the face toward the track -------------------
+    var c = I.corners(gx, gy, HW, HH, canvas);
+    var f = function (u, v) {
+      return facePoint(I.up(c.w, 2), I.up(c.s, 2), I.up(c.w, H + 2), I.up(c.s, H + 2), u, v);
+    };
+    faceQuad(ctx, f, 0.10, 0.62, 0.44, 0.80, '#1d242a');
+    for (var r = 0; r < 4; r++) {
+      // Rows advance up the board, one leaving the top as one joins the bottom:
+      // a queue being worked off.
+      var slot = (r + beat) % 4;
+      var v0 = 0.47 + slot * 0.075;
+      var lit = slot < 1;
+      I.poly(ctx, [f(0.13, v0), f(0.13 + (lit ? 0.30 : 0.44), v0),
+                   f(0.13 + (lit ? 0.30 : 0.44), v0 + 0.045),
+                   f(0.13, v0 + 0.045)], lit ? '#f0b040' : '#3f8f6a');
+    }
+
+    // --- the sorting gate: a gantry over the platform ------------------------
+    // Two legs planted between the building and the track, a beam across them,
+    // and three arms that drop in turn like a router picking a lane.
+    var gyGate = gy + 0.52;
+    [-0.34, 0.34].forEach(function (o) {
+      I.box(ctx, canvas, gx + o, gyGate, 0.045, 0.045, 26, PALETTE.steel, 2);
+    });
+    I.box(ctx, canvas, gx, gyGate, 0.40, 0.05, 6, '#8a929a', 28);
+
+    for (var a = 0; a < 3; a++) {
+      var phase = (beat * 3 + a * 0.34) % 1;
+      var drop = phase < 0.30 ? Math.sin(phase / 0.30 * Math.PI) : 0;
+      var ax = gx - 0.24 + a * 0.24;
+      var pivot = I.up(I.toScreen(ax, gyGate, canvas), 28);
+      var len = 11 * z;
+      var ang = -Math.PI / 2 + drop * (Math.PI / 2.1);       // hangs down when dropped
+      ctx.strokeStyle = drop > 0.1 ? '#e0902c' : '#9aa4ad';
+      ctx.lineWidth = Math.max(0.9, 2.2 * z);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pivot.x, pivot.y);
+      ctx.lineTo(pivot.x + Math.cos(ang) * len * 0.35, pivot.y - Math.sin(ang) * len);
+      ctx.stroke();
+      ctx.fillStyle = drop > 0.1 ? '#f0b040' : '#5f6a74';
+      ctx.beginPath();
+      ctx.arc(pivot.x, pivot.y, 2.2 * z, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.66, '#f0a132', z);
+
+    var top = I.up(I.toScreen(gx, gy, canvas), 2);
+    nameboard(ctx, top.x, top.y - 60 * z, stop.name, stop.tech, z);
   }
 
   /*
@@ -897,7 +976,8 @@ var Sprites = (function () {
     identity: identity, assign: assign, hash: hash,
     station: station, s3Depot: s3Depot, depot: depot, vault: vault,
     siding: siding, terminus: terminus, external: external, archive: archive,
-    archway: archway, ARCH_SPAN: ARCH_SPAN, platformStrip: platformStrip,
+    archway: archway, ARCH_SPAN: ARCH_SPAN, sortingStation: sortingStation,
+    platformStrip: platformStrip,
     train: train, cart: cart, beltBox: beltBox, tree: tree,
     nameboard: nameboard, roundRect: roundRect, shadowBlob: shadowBlob
   };

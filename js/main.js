@@ -68,12 +68,27 @@
                  puff: (st.t / 700) % 1 };
       }
 
+      /*
+       * Follow the track, curve and all. A hop whose rail carries a control
+       * point is drawn as a quadratic, so the train has to run the same
+       * quadratic or it cuts the corner and leaves the rails.
+       */
+      var link = trackBetween(prev.at, cur.at);
+      var pos, ahead2;
+      if (link && link.ctrl) {
+        pos = Iso.quadPoint(from.grid, link.ctrl, here.grid, e);
+        ahead2 = Iso.quadPoint(from.grid, link.ctrl, here.grid, Math.min(1, e + 0.02));
+      } else {
+        pos = { x: from.grid.x + (here.grid.x - from.grid.x) * e,
+                y: from.grid.y + (here.grid.y - from.grid.y) * e };
+        ahead2 = here.grid;
+      }
       return {
-        gx: from.grid.x + (here.grid.x - from.grid.x) * e,
-        gy: from.grid.y + (here.grid.y - from.grid.y) * e,
+        gx: pos.x,
+        gy: pos.y,
         cargo: prev.cargo,                                   // changes ON arrival
         pulse: 0,
-        heading: unit(here.grid.x - from.grid.x, here.grid.y - from.grid.y),
+        heading: unit(ahead2.x - pos.x, ahead2.y - pos.y),
         puff: (st.t / 700) % 1
       };
     }
@@ -86,6 +101,14 @@
       : lastHeading;
     return { gx: here.grid.x, gy: here.grid.y, cargo: cur.cargo, pulse: p,
              badge: attemptBadge(cur), heading: head, puff: (st.t / 2400) % 1 };
+  }
+
+  function trackBetween(fromId, toId) {
+    for (var i = 0; i < flow.tracks.length; i++) {
+      var t = flow.tracks[i];
+      if (t.from === fromId && t.to === toId) return t;
+    }
+    return null;
   }
 
   var lastHeading = { x: 1, y: 0 };

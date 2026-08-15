@@ -80,6 +80,19 @@ var Iso = (function () {
     return { x: gx + Math.cos(ang) * R, y: gy + R + Math.sin(ang) * R };
   }
 
+  /*
+   * A point on a quadratic curve through three grid points. Used for railway
+   * curves, where the control point is placed where the two tangent lines meet
+   * so a track leaves one stop and arrives at the next on chosen bearings
+   * rather than incidental ones. The renderer draws the rail from this and the
+   * engine runs the train along it, so the two cannot disagree.
+   */
+  function quadPoint(p0, c, p1, t) {
+    var u = 1 - t;
+    return { x: u * u * p0.x + 2 * u * t * c.x + t * t * p1.x,
+             y: u * u * p0.y + 2 * u * t * c.y + t * t * p1.y };
+  }
+
   /** Trace a tile diamond centred on a grid cell. Caller strokes or fills. */
   function tilePath(ctx, gx, gy, canvas, inset) {
     var s = toScreen(gx, gy, canvas);
@@ -201,7 +214,7 @@ var Iso = (function () {
     TILE_W: TILE_W, TILE_H: TILE_H, LOOP_R: LOOP_R, cam: cam,
     toWorld: toWorld, toScreen: toScreen,
     lookAt: lookAt, glideTo: glideTo, pan: pan, zoomBy: zoomBy,
-    frame: frame, tilePath: tilePath, loopPoint: loopPoint,
+    frame: frame, tilePath: tilePath, loopPoint: loopPoint, quadPoint: quadPoint,
     shade: shade, corners: corners, poly: poly, up: up,
     box: box, roof: roof, cylinder: cylinder
   };
