@@ -40,6 +40,16 @@ var Sprites = (function () {
 
   var FEATURES = ['clock', 'water', 'signal', 'chimney', 'vent', 'mast'];
 
+  /*
+   * How far an S3 depot's goods entrance stands from the building's centre, in
+   * grid units. Exported because render.js has to end the conveyor on exactly
+   * this number: a belt that runs to the building's centre instead disappears
+   * under the wall, which reads as going beneath the building rather than into
+   * it. One constant, used by the building that defines it and by the belt that
+   * has to meet it.
+   */
+  var S3_DOCK = 0.76;
+
   /** Stable small hash, so a name always produces the same building. */
   function hash(s) {
     var h = 2166136261;
@@ -245,23 +255,39 @@ var Sprites = (function () {
 
     I.box(ctx, canvas, gx, gy, HW + 0.14, HH + 0.14, 2, '#b7bdc3');       // apron
 
-    // --- the annex, on the side the rail leaves by ---------------------------
-    var ax = gx + HW + 0.16, ay = gy + 0.04;
-    I.box(ctx, canvas, ax, ay, 0.20, 0.28, 15, wall, 2);
-    I.box(ctx, canvas, ax, ay, 0.22, 0.30, 2, '#c3cad1', 17);             // parapet
-    var ac = I.corners(ax, ay, 0.20, 0.28, canvas);
+    /*
+     * The goods annex, on the +y side — the side the conveyor arrives from.
+     * Its outer face stands S3_DOCK from the building's centre, and render.js
+     * ends the belt on that same number, so the belt meets the doorway instead
+     * of sliding under the building. The middle bay is a real opening at the
+     * belt's own height; the two beside it are shuttered.
+     */
+    var AHW = 0.34, AHH = 0.22, AH = 18;
+    var ax = gx, ay = gy + S3_DOCK - AHH;
+    I.box(ctx, canvas, ax, ay, AHW, AHH, AH, wall, 2);
+    I.box(ctx, canvas, ax, ay, AHW + 0.03, AHH + 0.03, 2, '#c3cad1', AH + 2);
+    var ac = I.corners(ax, ay, AHW, AHH, canvas);
     var af = function (u, v) {
-      return facePoint(I.up(ac.w, 2), I.up(ac.s, 2), I.up(ac.w, 17), I.up(ac.s, 17), u, v);
+      return facePoint(I.up(ac.w, 2), I.up(ac.s, 2), I.up(ac.w, 2 + AH), I.up(ac.s, 2 + AH), u, v);
     };
-    for (var d = 0; d < 3; d++) {                                          // shutter bays
-      var u0 = 0.10 + d * 0.28;
-      faceQuad(ctx, af, u0, u0 + 0.20, 0.06, 0.62, '#9aa4ad');
+
+    [[0.05, 0.29], [0.71, 0.95]].forEach(function (bay) {                  // shuttered bays
+      faceQuad(ctx, af, bay[0], bay[1], 0.06, 0.60, '#9aa4ad');
       for (var sl = 0; sl < 4; sl++) {
-        var vv = 0.12 + sl * 0.13;
-        I.poly(ctx, [af(u0, vv), af(u0 + 0.20, vv), af(u0 + 0.20, vv + 0.03), af(u0, vv + 0.03)],
+        var vv = 0.11 + sl * 0.13;
+        I.poly(ctx, [af(bay[0], vv), af(bay[1], vv), af(bay[1], vv + 0.03), af(bay[0], vv + 0.03)],
                '#88939d');
       }
-    }
+    });
+
+    // The open bay the belt runs into. Deliberately tall enough to clear a box
+    // on the belt, and centred on u = 0.5 because the belt runs along x = gx.
+    faceQuad(ctx, af, 0.36, 0.64, 0.05, 0.86, '#1b2228');
+    ctx.strokeStyle = '#8d979f';
+    ctx.lineWidth = Math.max(0.5, 1.2 * z);
+    I.poly(ctx, [af(0.36, 0.05), af(0.64, 0.05), af(0.64, 0.86), af(0.36, 0.86)]);
+    ctx.stroke();
+    I.poly(ctx, [af(0.33, 0.86), af(0.67, 0.86), af(0.67, 0.93), af(0.33, 0.93)], '#e0902c');
 
     // --- the main hall -------------------------------------------------------
     I.box(ctx, canvas, gx, gy, HW, HH, H, wall, 2);
@@ -284,10 +310,6 @@ var Sprites = (function () {
       }
     });
 
-    // The belt's mouth, on the face the conveyor arrives at.
-    faceQuad(ctx, left, 0.30, 0.62, 0.02, 0.34, '#232b31');
-    I.poly(ctx, [left(0.30, 0.34), left(0.62, 0.34), left(0.62, 0.375), left(0.30, 0.375)],
-           '#8d979f');
 
     // --- solar arrays on the roof -------------------------------------------
     var rc = I.corners(gx, gy, HW - 0.05, HH - 0.05, canvas);
@@ -460,7 +482,10 @@ var Sprites = (function () {
 
     // Concrete apron. Just proud of the footprint on the road side — a slab to
     // back a cart onto, not the parade ground the first version had.
-    I.box(ctx, canvas, gx + 0.20, gy - 0.20, HW + 0.04, HH + 0.04, 2, '#b9bfc4');
+    // The yard is pulled back off the conveyor side. It is a ground slab and it
+    // is painted after the belt, so any part of it reaching past the building
+    // toward EA-S3 would be drawn straight over an elevated belt.
+    I.box(ctx, canvas, gx + 0.24, gy - 0.06, HW + 0.02, HH - 0.02, 2, '#b9bfc4');
 
     // Ground-level plant, on the apron and set to one side — the conveyor
     // leaves along x = gx, and these used to straddle it.
@@ -763,7 +788,8 @@ var Sprites = (function () {
   }
 
   return {
-    PALETTE: PALETTE, identity: identity, assign: assign, hash: hash,
+    PALETTE: PALETTE, S3_DOCK: S3_DOCK,
+    identity: identity, assign: assign, hash: hash,
     station: station, s3Depot: s3Depot, depot: depot, vault: vault,
     siding: siding, terminus: terminus, external: external, archive: archive,
     train: train, cart: cart, beltBox: beltBox, tree: tree,

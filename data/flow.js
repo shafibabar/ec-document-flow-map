@@ -52,7 +52,7 @@
    */
   var STOPS = [
     /*
-     * The Archive, at (0,6): two cells from EA-S3 along a single grid axis, so
+     * The Archive, at (0,7): three cells from EA-S3 along a single grid axis, so
      * EA-S3 sits up and to the right of it and the conveyor between them runs
      * at 90 degrees to both buildings' walls.
      *
@@ -83,7 +83,7 @@
      *   to them below rather than to a file that does not say it. If a document
      *   turns up that describes this hand-off, replace the src with it.
      */
-    { id: 'archive',    name: 'Archive',             kind: 'archive', tech: 'external',      grid: { x: 0, y: 6 },
+    { id: 'archive',    name: 'Archive',             kind: 'archive', tech: 'external',      grid: { x: 0, y: 7 },
       role: 'External system of record' },
 
     // --- the main line, y = 4, west to east ---------------------------------

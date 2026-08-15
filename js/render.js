@@ -214,19 +214,43 @@ var Render = (function () {
    * buildings are painted afterwards and simply cover the ends of the run, so
    * no fade or clip is needed and the depth tie along this axis stops mattering.
    */
+  /** How far from a stop's centre its goods entrance stands, in grid units. */
+  function entryOffset(stop) {
+    if (stop.kind === 'depot' && stop.tech === 'S3') return Sprites.S3_DOCK;
+    return 0;
+  }
+
   function drawBelt(ctx, canvas, flow, a, b, now, z) {
-    var p = Iso.toScreen(a.grid.x, a.grid.y, canvas);
-    var q = Iso.toScreen(b.grid.x, b.grid.y, canvas);
+    var dxg = b.grid.x - a.grid.x, dyg = b.grid.y - a.grid.y;
+    var lenG = Math.sqrt(dxg * dxg + dyg * dyg) || 1;
     var deck = 9;                                          // belt height, world px
+
+    /*
+     * Stop the belt at the destination's doorway, not at its centre.
+     *
+     * Running to the centre put the belt under the building: it was occluded by
+     * the near wall at ground level, which reads as passing beneath the floor
+     * rather than going in through a door. Ending it at the annex's outer face —
+     * the same Sprites.S3_DOCK the building places that annex with — and letting
+     * it tuck a little way past means the last thing you see is the belt meeting
+     * the open bay.
+     */
+    var eFace = 1 - entryOffset(b) / lenG;
+    var eBelt = eFace + 0.10 / lenG;
+    var at = function (e) {
+      return { x: a.grid.x + dxg * e, y: a.grid.y + dyg * e };
+    };
+    var endG = at(eBelt);
+    var p = Iso.toScreen(a.grid.x, a.grid.y, canvas);
+    var q = Iso.toScreen(endG.x, endG.y, canvas);
     var pd = { x: p.x, y: p.y - deck * z }, qd = { x: q.x, y: q.y - deck * z };
 
     // Trestles, spaced by the run's actual length rather than a fixed count —
     // a short belt with nine legs is a fence.
-    var dxg = b.grid.x - a.grid.x, dyg = b.grid.y - a.grid.y;
-    var lenG = Math.sqrt(dxg * dxg + dyg * dyg) || 1;
-    var legs = Math.max(3, Math.round(lenG * 2.5));
+    var legs = Math.max(3, Math.round(lenG * eBelt * 2.5));
     for (var i = 1; i < legs; i++) {
-      var lg = Iso.toScreen(a.grid.x + dxg * (i / legs), a.grid.y + dyg * (i / legs), canvas);
+      var lp = at(eBelt * (i / legs));
+      var lg = Iso.toScreen(lp.x, lp.y, canvas);
       ctx.strokeStyle = '#6a7178';
       ctx.lineWidth = 2.2 * z;
       ctx.beginPath();
@@ -271,15 +295,19 @@ var Render = (function () {
      * one along x its long side. A hard-coded count that looked right on one
      * bearing came out crowded on another.
      */
-    var IN = 0.12, OUT = 0.06;
+    var IN_G = 0.36, OUT_G = 0.34;                         // grid units, not fractions
+    var eStart = -IN_G / lenG;
+    var eEnd = eFace + OUT_G / lenG;
+    var span = eEnd - eStart;
+
     var ux = Math.abs(dxg / lenG), uy = Math.abs(dyg / lenG);
     var boxLen = 2 * (ux * 0.058 + uy * 0.042);            // grid units along the run
-    var BOXES = Math.max(2, Math.round((lenG * (1 + IN + OUT)) / (boxLen * 4)));
+    var BOXES = Math.max(2, Math.round((lenG * span) / (boxLen * 4)));
     var phase = ((now || 0) / 9000) % (1 / BOXES);
     for (i = 0; i < BOXES; i++) {
-      var e = -IN + (phase + i / BOXES) * (1 + IN + OUT);
-      if (e > 1 + OUT) continue;
-      Sprites.beltBox(ctx, canvas, a.grid.x + dxg * e, a.grid.y + dyg * e, deck, z);
+      var e = eStart + ((phase + i / BOXES) % 1) * span;
+      var bp = at(e);
+      Sprites.beltBox(ctx, canvas, bp.x, bp.y, deck, z);
     }
   }
 
