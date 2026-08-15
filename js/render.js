@@ -245,8 +245,7 @@ var Render = (function () {
     terminus: [0.46, 0.30],
     external: [0.36, 0.32],
     archive:  [0.64, 0.50],
-    halt:     [0.30, 0.30],
-    tunnel:   [0, 0],          // the line runs through the mountain, not up to it
+    archway:  [0, 0],          // the line runs THROUGH it, so never trimmed
     edge:     [0, 0]
   };
 
@@ -473,8 +472,6 @@ var Render = (function () {
 
   function drawStop(ctx, canvas, stop, state, z, t) {
     if (stop.kind === 'edge') return;                    // a bare end of line
-    if (stop.kind === 'halt') return Sprites.halt(ctx, canvas, stop, state, z);
-    if (stop.kind === 'tunnel') return Sprites.tunnel(ctx, canvas, stop, state, z);
     if (stop.kind === 'archive') return Sprites.archive(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'station') return Sprites.station(ctx, canvas, stop, state, z);
     if (stop.kind === 'yard') return Sprites.depot(ctx, canvas, stop, state, z);
@@ -593,6 +590,22 @@ var Render = (function () {
     flow.stops.forEach(function (s) {
       var pos = placed(flow, s);
       var aside = asideOf(flow, s);
+
+      /*
+       * The archway straddles the track, so it is two drawables: the far pier
+       * goes down before the train and the near pier after it. Sorted as one
+       * lump the train would always land in front of the whole arch and never
+       * look like it was inside it.
+       */
+      if (s.kind === 'archway') {
+        drawables.push({ key: pos.x - Sprites.ARCH_SPAN + pos.y, paint: function () {
+          Sprites.archway(ctx, canvas, s, state.stopState(s.id), z, 'back');
+        } });
+        drawables.push({ key: pos.x + Sprites.ARCH_SPAN + pos.y, paint: function () {
+          Sprites.archway(ctx, canvas, s, state.stopState(s.id), z, 'front');
+        } });
+        return;
+      }
       drawables.push({ key: pos.x + pos.y, paint: function () {
         // A station that stepped aside gets a platform strip bridging the gap
         // back to its track, so the arrangement reads building / platform /

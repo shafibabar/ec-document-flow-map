@@ -158,16 +158,15 @@
 
   /*
    * The service out of the Archive. Not a scenario train — no document in
-   * knowledge/ rides this line — but the tunnel is meant to show a phase
-   * transition and a portal with nothing ever going through it shows nothing.
+   * knowledge/ rides this line — but an archway with nothing ever passing under
+   * it shows nothing.
    *
    * It runs on wall-clock time so it keeps working while the scenario is
-   * paused, departs the halt, and disappears behind the hill. The mountain is
-   * painted after the flat pass and after anything at a lower gx + gy, so the
-   * train is genuinely occluded by the rock rather than faded out.
+   * paused. It leaves along the Archive's platform and runs on through the
+   * arch, which is drawn in two parts so the near pier passes in front of it.
    */
   function sceneTrains(now) {
-    var halt = stopById('archive-halt'), edge = stopById('beyond');
+    var halt = stopById('line-in'), edge = stopById('line-out');
     if (!halt || !edge) return [];
     var cy = (now % 14000) / 14000;
     if (cy > 0.62) return [];                  // laid up between workings

@@ -87,30 +87,28 @@
       role: 'External system of record' },
 
     /*
-     * The Archive's own halt, and the line out of the estate.
+     * The line out of the Archive, and the Gateway archway on it.
      *
-     * A platform at (0,8.1), clear of the Archive's footprint, with the track
-     * starting beyond it — building, then platform, then track, in that order.
-     * From there the line runs bottom-left along x = 0 (pure +y, so it leaves
-     * the platform square) into the tunnel at (0,10.8) and out the far side.
+     * The track runs along x = 1.55, which is Sprites.ARCHIVE_TRACK — parallel
+     * to the Archive's own platform and just beyond it. A platform belongs
+     * BESIDE a track, never across the end of one, so the arrangement across
+     * the x axis is building at 0, platform at 1.02, rail at 1.55, all of it
+     * running the same way as the trains.
      *
-     * The tunnel is the phase transition: past it the line is in different
-     * country, and the portal is signed for what lies beyond. Note the sign
-     * says Gateway because that is the service on the other side of the
-     * ingestion boundary — it is NOT the Gateway station at (2,4), which is
-     * still where the documented supBulkIndexingTopic_k8s hop lands.
+     * The Archive has no halt of its own any more. Its loading yard is the
+     * platform, the building is the structure, and neither needs a name of its
+     * own on the map.
      *
-     * These three are scenery, not estate facts: no scenario walks them, and
-     * nothing in knowledge/ describes a railway out of the Archive. They are
-     * marked `scene` so the layout tooling and any future validator can tell
-     * them apart from the modelled estate at a glance.
+     * These are scenery, not estate facts: no scenario walks them, and nothing
+     * in knowledge/ describes a railway out of the Archive. Marked `scene` so
+     * the tooling can tell them apart from the modelled estate.
      */
-    { id: 'archive-halt', name: 'Archive Halt', kind: 'halt', tech: 'platform',
-      grid: { x: 0, y: 8.1 }, scene: true },
-    { id: 'tunnel',       name: 'Gateway',      kind: 'tunnel', tech: 'k8s',
-      grid: { x: 0, y: 10.8 }, scene: true },
-    { id: 'beyond',       name: '',             kind: 'edge', tech: '',
-      grid: { x: 0, y: 12.6 }, scene: true },
+    { id: 'line-in',      name: '',        kind: 'edge',    tech: '',
+      grid: { x: 1.55, y: 5.9 },  scene: true },
+    { id: 'gateway-arch', name: 'Gateway', kind: 'archway', tech: 'k8s',
+      grid: { x: 1.55, y: 9.4 },  scene: true },
+    { id: 'line-out',     name: '',        kind: 'edge',    tech: '',
+      grid: { x: 1.55, y: 12.2 }, scene: true },
 
     // --- the main line, y = 4, west to east ---------------------------------
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
@@ -182,15 +180,14 @@
      * Sourced to the repo owner. See the note on the archive stop above.
      */
     /*
-     * The line out through the tunnel. One straight run along x = 0: platform
-     * to portal, then portal to the map edge. Drawn as two tracks so the
-     * mountain, which is painted after the flat pass, buries the middle of it
-     * and leaves the emerging length visible below the portal.
+     * One straight run along x = 1.55, past the Archive's platform and on
+     * through the archway. Two tracks rather than one so the archway sits
+     * between them in the model as well as on screen.
      */
-    { from: 'archive-halt', to: 'tunnel', transport: 'rail', scene: true,
-      topic: 'the line out of the Archive' },
-    { from: 'tunnel',       to: 'beyond', transport: 'rail', scene: true,
-      topic: 'beyond the portal' },
+    { from: 'line-in',      to: 'gateway-arch', transport: 'rail', scene: true,
+      topic: 'the line past the Archive platform' },
+    { from: 'gateway-arch', to: 'line-out',     transport: 'rail', scene: true,
+      topic: 'beyond the Gateway' },
 
     { from: 'archive',   to: 'ea-s3',     transport: 'belt',
       topic: 'archived documents -> EA S3 bucket',
