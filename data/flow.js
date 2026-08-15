@@ -87,7 +87,17 @@
       role: 'External system of record' },
 
     /*
-     * The line out of the Archive, and the Gateway archway on it.
+     * The line out of the Archive, and Gateway on it.
+     *
+     * Gateway is no longer a station on the y = 4 row. It IS this archway: one
+     * service, one representation, with the old building deleted rather than
+     * left standing beside its replacement.
+     *
+     * That has a visible cost until the rest of the pipeline follows. EA-S3 and
+     * Queue Qualifier still sit on the y = 4 line, so their rails now meet
+     * Gateway off-axis and the main line has a kink in it. That is a deliberate
+     * intermediate state, agreed with the repo owner: the alternative was to
+     * keep two Gateways on the map, and a duplicate is worse than a bend.
      *
      * The track runs along x = 1.55, which is Sprites.ARCHIVE_TRACK — parallel
      * to the Archive's own platform and just beyond it. A platform belongs
@@ -105,14 +115,13 @@
      */
     { id: 'line-in',      name: '',        kind: 'edge',    tech: '',
       grid: { x: 1.55, y: 5.9 },  scene: true },
-    { id: 'gateway-arch', name: 'Gateway', kind: 'archway', tech: 'k8s',
-      grid: { x: 1.55, y: 9.4 },  scene: true },
+    { id: 'gateway',      name: 'Gateway', kind: 'archway', tech: 'k8s',
+      grid: { x: 1.55, y: 9.4 } },
     { id: 'line-out',     name: '',        kind: 'edge',    tech: '',
       grid: { x: 1.55, y: 12.2 }, scene: true },
 
     // --- the main line, y = 4, west to east ---------------------------------
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
-    { id: 'gateway',    name: 'Gateway',             kind: 'station', tech: 'K8s',           grid: { x: 2, y: 4 } },
     { id: 'qualifier',  name: 'Queue Qualifier',     kind: 'station', tech: 'K8s',           grid: { x: 4, y: 4 } },
     { id: 'filter',     name: 'Surveillance Filter', kind: 'station', tech: 'K8s',           grid: { x: 6, y: 4 } },
     { id: 'evaluator',  name: 'Policy Evaluator',    kind: 'station', tech: 'K8s',           grid: { x: 8, y: 4 } },
@@ -184,9 +193,9 @@
      * through the archway. Two tracks rather than one so the archway sits
      * between them in the model as well as on screen.
      */
-    { from: 'line-in',      to: 'gateway-arch', transport: 'rail', scene: true,
+    { from: 'line-in',      to: 'gateway',      transport: 'rail', scene: true,
       topic: 'the line past the Archive platform' },
-    { from: 'gateway-arch', to: 'line-out',     transport: 'rail', scene: true,
+    { from: 'gateway',      to: 'line-out',     transport: 'rail', scene: true,
       topic: 'beyond the Gateway' },
 
     { from: 'archive',   to: 'ea-s3',     transport: 'belt',
@@ -244,7 +253,9 @@
      * topic, because the service writes an outbox row and Debezium publishes
      * it. That absence is the pattern, not a gap.
      */
-    { from: 'manual-run',     to: 'gateway',        transport: 'kafka',
+    // Bowed away from EA-S3, which the straight run clipped by 5px once Gateway
+    // moved down to the archway. Measured, not guessed: +ve bows made it worse.
+    { from: 'manual-run',     to: 'gateway',        transport: 'kafka', bow: -0.8,
       topic: 'ec.surveillance-manual-run.{tenant}.ingestion' },
     /*
      * The manual-run bypass. Drawn with a bow because it genuinely is one: a
