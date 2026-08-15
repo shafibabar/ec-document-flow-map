@@ -51,7 +51,8 @@ var Render = (function () {
   /** Kafka and its retry/DLT variants ride on rail; everything else on road. */
   function isRail(t) {
     return t.transport === 'kafka' || t.transport === 'cdc' ||
-           t.transport === 'retry' || t.transport === 'dlt';
+           t.transport === 'retry' || t.transport === 'dlt' ||
+           t.transport === 'rail';
   }
 
 
@@ -108,10 +109,14 @@ var Render = (function () {
 
   // ------------------------------------------------------------------- track
 
-  /** The path a rail or road follows, as screen points. Bowed edges curve. */
-  function edgePoints(canvas, a, b, bow) {
-    var p = Iso.toScreen(a.grid.x, a.grid.y, canvas);
-    var q = Iso.toScreen(b.grid.x, b.grid.y, canvas);
+  /*
+   * The path a rail or road follows, as screen points. Bowed edges curve.
+   * `ga` and `gb` are grid points, already trimmed back to each stop's apron
+   * by the caller — this function no longer knows about stops at all.
+   */
+  function edgePoints(canvas, ga, gb, bow) {
+    var p = Iso.toScreen(ga.x, ga.y, canvas);
+    var q = Iso.toScreen(gb.x, gb.y, canvas);
     if (!bow) return [p, q];
     var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
     var vx = q.x - p.x, vy = q.y - p.y;
@@ -220,8 +225,102 @@ var Render = (function () {
     return 0;
   }
 
+  /*
+   * Where a rail has to stop.
+   *
+   * Every rail used to run to a stop's CENTRE, which meant it spent the whole
+   * half-depth of that building buried under it — 30px under a station, 21px
+   * under EA-S3 — and the train stood on the same spot the building occupies.
+   * The rail now ends at the edge of the stop's apron, which is exactly where a
+   * platform is, so the track arrives beside the building instead of inside it.
+   *
+   * These are the half-extents of each painter's ground slab plus a little, so
+   * a rail stops just clear of the paving rather than flush against it.
+   */
+  var APRON = {
+    station:  [0.52, 0.52],
+    yard:     [0.58, 0.46],
+    depot:    [0.58, 0.48],
+    siding:   [0.40, 0.26],
+    terminus: [0.46, 0.30],
+    external: [0.36, 0.32],
+    archive:  [0.64, 0.50],
+    halt:     [0.30, 0.30],
+    tunnel:   [0, 0],          // the line runs through the mountain, not up to it
+    edge:     [0, 0]
+  };
+
+  /*
+   * A through-station steps aside from its own track.
+   *
+   * Trimming the rail at the apron is the right answer for an END of a line,
+   * but not for a station a train passes through: the platform a train would
+   * halt at sits at a LOWER gx+gy than the building, so the building would be
+   * painted after it and hide the train at every stop. Moving the building off
+   * the line instead fixes both halves at once — the rail never runs under
+   * anything, and the train stands in front of its own station where you can
+   * see it.
+   *
+   * The offset is perpendicular to whichever grid axis the station's rails
+   * mostly follow, and always toward smaller gx + gy so the building sits
+   * BEHIND the track. A platform strip is drawn in the gap.
+   */
+  var ASIDE = 0.72;
+  var asideCache = null;
+
+  function asideOf(flow, stop) {
+    if (!asideCache) {
+      asideCache = {};
+      var axis = {};
+      flow.stops.forEach(function (s) { axis[s.id] = { x: 0, y: 0 }; });
+      flow.tracks.forEach(function (t) {
+        if (t.layer || t.from === t.to || !isRail(t)) return;
+        var a = stopById(flow, t.from), b = stopById(flow, t.to);
+        if (!a || !b) return;
+        var dx = Math.abs(b.grid.x - a.grid.x), dy = Math.abs(b.grid.y - a.grid.y);
+        axis[t.from].x += dx; axis[t.from].y += dy;
+        axis[t.to].x += dx;   axis[t.to].y += dy;
+      });
+      flow.stops.forEach(function (s) {
+        var a = axis[s.id];
+        // Only stations a train runs THROUGH move. Depots, yards, sidings and
+        // the Archive are ends of a line: their rails get trimmed instead, and
+        // moving them would break the docks the belts and roads aim at.
+        // Externals are the end of a spur, not somewhere a train runs through,
+        // so they keep their cell and get their rail trimmed instead.
+        var through = (s.kind === 'station' || s.kind === 'terminus');
+        asideCache[s.id] = (!through || (a.x === 0 && a.y === 0)) ? { x: 0, y: 0 }
+          : (a.x >= a.y ? { x: 0, y: -ASIDE } : { x: -ASIDE, y: 0 });
+      });
+    }
+    return asideCache[stop.id] || { x: 0, y: 0 };
+  }
+
+  /** Where a stop's building is actually drawn, which is not always its cell. */
+  function placed(flow, stop) {
+    var a = asideOf(flow, stop);
+    return { x: stop.grid.x + a.x, y: stop.grid.y + a.y };
+  }
+
+  /*
+   * The point on the line from `stop` toward `toward` where the rail stops. A
+   * station that has stepped aside no longer needs trimming — the rail runs
+   * clean past it — so its apron is treated as zero.
+   */
+  function haltPoint(flow, stop, toward) {
+    var a = asideOf(flow, stop);
+    if (a.x || a.y) return { x: stop.grid.x, y: stop.grid.y };
+    var dx = toward.x - stop.grid.x, dy = toward.y - stop.grid.y;
+    var L = Math.sqrt(dx * dx + dy * dy) || 1;
+    var ux = dx / L, uy = dy / L;
+    var ap = APRON[stop.kind] || [0.46, 0.40];
+    var r = ap[0] * Math.abs(ux) + ap[1] * Math.abs(uy);
+    return { x: stop.grid.x + ux * r, y: stop.grid.y + uy * r };
+  }
+
   function drawBelt(ctx, canvas, flow, a, b, now, z) {
-    var dxg = b.grid.x - a.grid.x, dyg = b.grid.y - a.grid.y;
+    var pa = placed(flow, a), pb = placed(flow, b);
+    var dxg = pb.x - pa.x, dyg = pb.y - pa.y;
     var lenG = Math.sqrt(dxg * dxg + dyg * dyg) || 1;
     var deck = 9;                                          // belt height, world px
 
@@ -238,10 +337,10 @@ var Render = (function () {
     var eFace = 1 - entryOffset(b) / lenG;
     var eBelt = eFace + 0.10 / lenG;
     var at = function (e) {
-      return { x: a.grid.x + dxg * e, y: a.grid.y + dyg * e };
+      return { x: pa.x + dxg * e, y: pa.y + dyg * e };
     };
     var endG = at(eBelt);
-    var p = Iso.toScreen(a.grid.x, a.grid.y, canvas);
+    var p = Iso.toScreen(pa.x, pa.y, canvas);
     var q = Iso.toScreen(endG.x, endG.y, canvas);
     var pd = { x: p.x, y: p.y - deck * z }, qd = { x: q.x, y: q.y - deck * z };
 
@@ -337,7 +436,20 @@ var Render = (function () {
       return;
     }
 
-    var pts = edgePoints(canvas, a, b, track.bow);
+    /*
+     * Rails run to the cells, trimmed back at any end that did not step aside.
+     * Roads run building to building, because a road is the last few metres to
+     * a door — it has to arrive at the building, not at the track beside it.
+     */
+    var ga, gb;
+    if (isRail(track) || track.layer) {
+      ga = haltPoint(flow, a, b.grid);
+      gb = haltPoint(flow, b, a.grid);
+    } else {
+      ga = placed(flow, a);
+      gb = placed(flow, b);
+    }
+    var pts = edgePoints(canvas, ga, gb, track.bow);
 
     /*
      * Config sync and audit plumbing. Real edges, but not the document's
@@ -360,6 +472,9 @@ var Render = (function () {
   // --------------------------------------------------------------- buildings
 
   function drawStop(ctx, canvas, stop, state, z, t) {
+    if (stop.kind === 'edge') return;                    // a bare end of line
+    if (stop.kind === 'halt') return Sprites.halt(ctx, canvas, stop, state, z);
+    if (stop.kind === 'tunnel') return Sprites.tunnel(ctx, canvas, stop, state, z);
     if (stop.kind === 'archive') return Sprites.archive(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'station') return Sprites.station(ctx, canvas, stop, state, z);
     if (stop.kind === 'yard') return Sprites.depot(ctx, canvas, stop, state, z);
@@ -413,8 +528,12 @@ var Render = (function () {
     if (occupiedCache) return occupiedCache;
     var occ = {};
     flow.stops.forEach(function (s) {
+      var q = placed(flow, s);
       for (var dx = -1; dx <= 1; dx++) {
-        for (var dy = -1; dy <= 1; dy++) occ[(s.grid.x + dx) + ':' + (s.grid.y + dy)] = true;
+        for (var dy = -1; dy <= 1; dy++) {
+          occ[Math.round(q.x + dx) + ':' + Math.round(q.y + dy)] = true;
+          occ[(s.grid.x + dx) + ':' + (s.grid.y + dy)] = true;   // and its track cell
+        }
       }
     });
     flow.tracks.forEach(function (t) {
@@ -472,13 +591,26 @@ var Render = (function () {
       });
     }
     flow.stops.forEach(function (s) {
-      drawables.push({ key: s.grid.x + s.grid.y, paint: function () {
-        drawStop(ctx, canvas, s, state.stopState(s.id), z, state.now);
+      var pos = placed(flow, s);
+      var aside = asideOf(flow, s);
+      drawables.push({ key: pos.x + pos.y, paint: function () {
+        // A station that stepped aside gets a platform strip bridging the gap
+        // back to its track, so the arrangement reads building / platform /
+        // track rather than a building marooned beside a line.
+        if (aside.x || aside.y) Sprites.platformStrip(ctx, canvas, s, aside, z);
+        drawStop(ctx, canvas, { id: s.id, name: s.name, kind: s.kind, tech: s.tech,
+                                role: s.role, grid: pos },
+                 state.stopState(s.id), z, state.now);
       } });
     });
     (state.carts || []).forEach(function (c) {
       drawables.push({ key: c.gx + c.gy + 0.01, paint: function () {
         Sprites.cart(ctx, canvas, c.gx, c.gy, c.tint, z, c.load);
+      } });
+    });
+    (state.sceneTrains || []).forEach(function (t) {
+      drawables.push({ key: t.gx + t.gy + 0.015, paint: function () {
+        Sprites.train(ctx, canvas, t.gx, t.gy, t.heading, t.cargo, z, { puff: t.puff });
       } });
     });
     if (state.cart) {
@@ -493,5 +625,5 @@ var Render = (function () {
     drawables.forEach(function (d) { d.paint(); });
   }
 
-  return { draw: draw, colours: C };
+  return { draw: draw, colours: C, placed: placed, asideOf: asideOf };
 })();

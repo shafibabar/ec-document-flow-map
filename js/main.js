@@ -124,6 +124,9 @@
 
       var a = stopById(t.from), b = stopById(t.to);
       if (!a || !b) return;
+      // Carts run building to building, so they use where the building is
+      // actually drawn rather than its track cell.
+      var pa = Render.placed(flow, a), pb = Render.placed(flow, b);
 
       /*
        * Stop at the dock, not at the middle of the building.
@@ -135,7 +138,7 @@
        * Holding it a fixed distance clear of both ends fixes it properly — the
        * cart pulls up at the loading dock, which is where a cart belongs.
        */
-      var dx = b.grid.x - a.grid.x, dy = b.grid.y - a.grid.y;
+      var dx = pb.x - pa.x, dy = pb.y - pa.y;
       var len = Math.sqrt(dx * dx + dy * dy) || 1;
       var pad = Math.min(0.42, (t.dock === undefined ? 0.8 : t.dock) / len);
 
@@ -144,13 +147,42 @@
       var run = ease(k < 0.5 ? k * 2 : (1 - k) * 2);
       var e = pad + run * (1 - pad * 2);
       out.push({
-        gx: a.grid.x + dx * e,
-        gy: a.grid.y + dy * e,
+        gx: pa.x + dx * e,
+        gy: pa.y + dy * e,
         tint: tint,
         load: 1            // on these roads a cart fetches as well as delivers
       });
     });
     return out;
+  }
+
+  /*
+   * The service out of the Archive. Not a scenario train — no document in
+   * knowledge/ rides this line — but the tunnel is meant to show a phase
+   * transition and a portal with nothing ever going through it shows nothing.
+   *
+   * It runs on wall-clock time so it keeps working while the scenario is
+   * paused, departs the halt, and disappears behind the hill. The mountain is
+   * painted after the flat pass and after anything at a lower gx + gy, so the
+   * train is genuinely occluded by the rock rather than faded out.
+   */
+  function sceneTrains(now) {
+    var halt = stopById('archive-halt'), edge = stopById('beyond');
+    if (!halt || !edge) return [];
+    var cy = (now % 14000) / 14000;
+    if (cy > 0.62) return [];                  // laid up between workings
+    var k = ease(Math.min(1, cy / 0.62));
+    // Computed here rather than through unit(), which caches lastHeading for
+    // the scenario train — this one must not reach into that.
+    var hx = edge.grid.x - halt.grid.x, hy = edge.grid.y - halt.grid.y;
+    var hL = Math.sqrt(hx * hx + hy * hy) || 1;
+    return [{
+      gx: halt.grid.x + hx * k,
+      gy: halt.grid.y + hy * k,
+      heading: { x: hx / hL, y: hy / hL },
+      cargo: { label: 'archive', tint: '#b08a4a', stamps: [] },
+      puff: (now / 620) % 1
+    }];
   }
 
   /** "attempt 2 of 3", or nothing at all on a step that is not a retry. */
@@ -260,6 +292,7 @@
       now: now,
       cart: cart,
       carts: roadCarts(),
+      sceneTrains: sceneTrains(now),
       activeTrack: activeTrack(),
       stopState: stopStateFor,
       hideLayers: st.hideLayers

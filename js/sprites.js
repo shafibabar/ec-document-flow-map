@@ -598,6 +598,185 @@ var Sprites = (function () {
     nameboard(ctx, top.x, top.y - 74 * z, stop.name, null, z);
   }
 
+  /*
+   * The platform between a station that has stepped aside and its track. Drawn
+   * from the building's new position back to the cell the rails run through, so
+   * the arrangement reads building / platform / track the way a real halt does.
+   */
+  function platformStrip(ctx, canvas, stop, aside, z) {
+    var gx = stop.grid.x + aside.x, gy = stop.grid.y + aside.y;
+    var alongX = aside.y !== 0;                    // stepped off an x-axis line
+    var hw = alongX ? 0.50 : Math.abs(aside.x) / 2 + 0.10;
+    var hh = alongX ? Math.abs(aside.y) / 2 + 0.10 : 0.50;
+    var cx = alongX ? gx : gx + Math.abs(aside.x) / 2;
+    var cy = alongX ? gy + Math.abs(aside.y) / 2 : gy;
+
+    I.box(ctx, canvas, cx, cy, hw, hh, 3, PALETTE.platform);
+    // A painted edge along the platform lip, on the track side.
+    var c = I.corners(cx, cy, hw, hh, canvas);
+    ctx.strokeStyle = 'rgba(230,220,190,.75)';
+    ctx.lineWidth = Math.max(0.6, 1.6 * z);
+    ctx.beginPath();
+    var e1 = I.up(alongX ? c.w : c.n, 3), e2 = I.up(alongX ? c.s : c.e, 3);
+    ctx.moveTo(e1.x, e1.y);
+    ctx.lineTo(e2.x, e2.y);
+    ctx.stroke();
+  }
+
+  /*
+   * A wayside halt: a bare platform with a shelter and a running-in board. This
+   * is the "station" half of building / platform / track — it stands between
+   * the Archive and the line so a train has somewhere to call.
+   */
+  function halt(ctx, canvas, stop, state, z) {
+    var gx = stop.grid.x, gy = stop.grid.y;
+    I.box(ctx, canvas, gx, gy, 0.46, 0.22, 4, PALETTE.platform);
+    I.box(ctx, canvas, gx - 0.22, gy, 0.14, 0.13, 12, PALETTE.wall, 4);   // shelter
+    I.roof(ctx, canvas, gx - 0.22, gy, 0.19, 0.17, 16, 6, '#7a8490');
+
+    // Platform lip along the track side, and a lamp at the far end.
+    var c = I.corners(gx, gy, 0.46, 0.22, canvas);
+    ctx.strokeStyle = 'rgba(232,222,192,.8)';
+    ctx.lineWidth = Math.max(0.6, 1.6 * z);
+    ctx.beginPath();
+    var l1 = I.up(c.w, 4), l2 = I.up(c.s, 4);
+    ctx.moveTo(l1.x, l1.y); ctx.lineTo(l2.x, l2.y);
+    ctx.stroke();
+
+    var lamp = I.up(I.toScreen(gx + 0.3, gy - 0.1, canvas), 4);
+    ctx.strokeStyle = '#6b7078';
+    ctx.lineWidth = Math.max(0.5, 1.2 * z);
+    ctx.beginPath();
+    ctx.moveTo(lamp.x, lamp.y); ctx.lineTo(lamp.x, lamp.y - 16 * z);
+    ctx.stroke();
+    ctx.fillStyle = '#f2e2b4';
+    ctx.beginPath();
+    ctx.arc(lamp.x, lamp.y - 17 * z, 2.2 * z, 0, Math.PI * 2);
+    ctx.fill();
+
+    var top = I.up(I.toScreen(gx, gy, canvas), 4);
+    nameboard(ctx, top.x, top.y - 30 * z, stop.name, null, z);
+  }
+
+  /*
+   * The tunnel: a low-poly rock mass with a portal through it, standing where
+   * the line leaves the Archive's territory.
+   *
+   * The rock is built from a handful of hard-edged facets rather than a smooth
+   * dome, because flat facets are what read as low-poly stone at this scale and
+   * they cost almost nothing. Vegetation is placed by a hash of the facet index,
+   * so the hillside is identical every frame and every reload.
+   *
+   * The portal sits on the +y face — the near, visible one. A train running
+   * down-left into the hill meets its far side, which we cannot see, so it
+   * simply vanishes behind the rock and reappears out of this mouth. That is
+   * both what a tunnel looks like from here and what the projection allows: a
+   * face we can see has its normal pointing at us, so anything entering through
+   * it would be moving away from the viewer.
+   */
+  function tunnel(ctx, canvas, stop, state, z) {
+    var gx = stop.grid.x, gy = stop.grid.y;
+    var HW = 0.95, HH = 0.80, H = 66;
+    var rock = '#8e969c', rockLit = '#a7aeb4', rockDark = '#6d757b';
+
+    // Rubble skirt, so the hill sits in the ground rather than on it.
+    I.box(ctx, canvas, gx, gy, HW + 0.18, HH + 0.16, 3, '#7f8a76');
+
+    // The mass, as three stacked slabs of shrinking footprint — the silhouette
+    // that gives it a peak without a mesh.
+    I.box(ctx, canvas, gx, gy, HW, HH, H * 0.42, rock, 3);
+    I.box(ctx, canvas, gx - 0.06, gy - 0.05, HW * 0.74, HH * 0.72, H * 0.34, rockLit, 3 + H * 0.42);
+    I.box(ctx, canvas, gx - 0.12, gy - 0.10, HW * 0.42, HH * 0.40, H * 0.24, rock, 3 + H * 0.76);
+
+    // Facets: angular plates pinned to the visible flanks, in three tones so
+    // the rock breaks up instead of reading as three clean boxes.
+    var tones = [rockLit, rock, rockDark];
+    for (var i = 0; i < 14; i++) {
+      var h = hash('rock' + i);
+      var side = (h & 1) ? 1 : -1;
+      var fx = gx + (side > 0 ? 1 : 0.15) * (((h >>> 3) % 60) / 100) * HW * 0.9 - HW * 0.1;
+      var fy = gy + (side > 0 ? 0.15 : 1) * (((h >>> 9) % 60) / 100) * HH * 0.9 - HH * 0.1;
+      var fb = 3 + (((h >>> 15) % 60) / 100) * H * 0.62;
+      I.box(ctx, canvas, fx, fy, 0.09 + ((h >>> 21) % 8) / 100, 0.08 + ((h >>> 24) % 7) / 100,
+            5 + ((h >>> 27) % 7), tones[h % 3], fb);
+    }
+
+    // --- the portal, on the near +y face -------------------------------------
+    var c = I.corners(gx, gy, HW, HH, canvas);
+    var pf = function (u, v) {
+      return facePoint(I.up(c.w, 3), I.up(c.s, 3),
+                       I.up(c.w, 3 + H * 0.42), I.up(c.s, 3 + H * 0.42), u, v);
+    };
+    // A dressed stone surround, then the bore itself.
+    faceQuad(ctx, pf, 0.34, 0.66, 0.02, 0.62, '#9fa7ad');
+    faceQuad(ctx, pf, 0.375, 0.625, 0.02, 0.56, '#20262b');
+    ctx.strokeStyle = '#767f86';
+    ctx.lineWidth = Math.max(0.6, 1.6 * z);
+    I.poly(ctx, [pf(0.34, 0.02), pf(0.66, 0.02), pf(0.66, 0.62), pf(0.34, 0.62)]);
+    ctx.stroke();
+    // Keystone arch courses across the head of the bore.
+    for (i = 0; i < 5; i++) {
+      var u0 = 0.375 + i * 0.05;
+      I.poly(ctx, [pf(u0, 0.56), pf(u0 + 0.05, 0.56), pf(u0 + 0.05, 0.62), pf(u0, 0.62)],
+             i % 2 ? '#aab2b8' : '#98a1a7');
+    }
+
+    // --- vegetation ----------------------------------------------------------
+    // Pines and shrubs over the flanks, dense enough to read as lush without
+    // burying the rock. Placed off the portal's centre line so the mouth stays
+    // clear.
+    for (i = 0; i < 22; i++) {
+      var g = hash('veg' + i);
+      var ang = ((g >>> 2) % 360) * Math.PI / 180;
+      var rad = 0.35 + ((g >>> 11) % 70) / 100;
+      var vx = gx + Math.cos(ang) * rad * HW * 1.15;
+      var vy = gy + Math.sin(ang) * rad * HH * 1.15;
+      if (Math.abs(vx - gx) < 0.16 && vy > gy) continue;      // keep the mouth clear
+      var lift = Math.max(0, (1 - rad) * H * 0.5) + 3;
+      if ((g % 3) === 0) shrub(ctx, canvas, vx, vy, lift, g, z);
+      else pine(ctx, canvas, vx, vy, lift, g, z);
+    }
+
+    var top = I.up(I.toScreen(gx, gy, canvas), 3 + H * 0.76 + H * 0.24);
+    nameboard(ctx, top.x, top.y - 16 * z, 'Gateway', 'k8s', z);
+  }
+
+  /** A conifer. Three stacked cones, which is all a pine needs at this size. */
+  function pine(ctx, canvas, gx, gy, base, seed, z) {
+    var s = I.toScreen(gx, gy, canvas);
+    var sc = 0.8 + ((seed >>> 5) % 50) / 100;
+    var y0 = s.y - base * z;
+    ctx.fillStyle = '#6b4a2f';
+    ctx.fillRect(s.x - 1.2 * sc * z, y0 - 5 * sc * z, 2.4 * sc * z, 5 * sc * z);
+    var greens = ['#2f6b39', '#387d42', '#275c32'];
+    var col = greens[seed % greens.length];
+    for (var t = 0; t < 3; t++) {
+      var w = (9 - t * 2.4) * sc * z, hgt = (8 - t * 1.2) * sc * z;
+      var cy = y0 - (4 + t * 5.2) * sc * z;
+      ctx.beginPath();
+      ctx.moveTo(s.x, cy - hgt);
+      ctx.lineTo(s.x + w, cy);
+      ctx.lineTo(s.x - w, cy);
+      ctx.closePath();
+      ctx.fillStyle = t === 2 ? I.shade(col, 0.14) : col;
+      ctx.fill();
+    }
+  }
+
+  /** A shrub — a couple of low mounds. */
+  function shrub(ctx, canvas, gx, gy, base, seed, z) {
+    var s = I.toScreen(gx, gy, canvas);
+    var y0 = s.y - base * z;
+    var greens = ['#4a8c42', '#3f7a3a', '#55965a'];
+    ctx.fillStyle = greens[seed % greens.length];
+    ctx.beginPath();
+    ctx.ellipse(s.x, y0 - 2 * z, 5.5 * z, 3.4 * z, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(s.x + 3 * z, y0 - 1 * z, 3.6 * z, 2.4 * z, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   /** A soft ring on the ground marking the stop the document is at now. */
   function haloRing(ctx, canvas, gx, gy, r, colour, z) {
     var c = I.toScreen(gx, gy, canvas);
@@ -792,6 +971,7 @@ var Sprites = (function () {
     identity: identity, assign: assign, hash: hash,
     station: station, s3Depot: s3Depot, depot: depot, vault: vault,
     siding: siding, terminus: terminus, external: external, archive: archive,
+    tunnel: tunnel, halt: halt, platformStrip: platformStrip, pine: pine, shrub: shrub,
     train: train, cart: cart, beltBox: beltBox, tree: tree,
     nameboard: nameboard, roundRect: roundRect, shadowBlob: shadowBlob
   };

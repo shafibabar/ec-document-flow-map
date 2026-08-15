@@ -86,6 +86,32 @@
     { id: 'archive',    name: 'Archive',             kind: 'archive', tech: 'external',      grid: { x: 0, y: 7 },
       role: 'External system of record' },
 
+    /*
+     * The Archive's own halt, and the line out of the estate.
+     *
+     * A platform at (0,8.1), clear of the Archive's footprint, with the track
+     * starting beyond it — building, then platform, then track, in that order.
+     * From there the line runs bottom-left along x = 0 (pure +y, so it leaves
+     * the platform square) into the tunnel at (0,10.8) and out the far side.
+     *
+     * The tunnel is the phase transition: past it the line is in different
+     * country, and the portal is signed for what lies beyond. Note the sign
+     * says Gateway because that is the service on the other side of the
+     * ingestion boundary — it is NOT the Gateway station at (2,4), which is
+     * still where the documented supBulkIndexingTopic_k8s hop lands.
+     *
+     * These three are scenery, not estate facts: no scenario walks them, and
+     * nothing in knowledge/ describes a railway out of the Archive. They are
+     * marked `scene` so the layout tooling and any future validator can tell
+     * them apart from the modelled estate at a glance.
+     */
+    { id: 'archive-halt', name: 'Archive Halt', kind: 'halt', tech: 'platform',
+      grid: { x: 0, y: 8.1 }, scene: true },
+    { id: 'tunnel',       name: 'Gateway',      kind: 'tunnel', tech: 'k8s',
+      grid: { x: 0, y: 10.8 }, scene: true },
+    { id: 'beyond',       name: '',             kind: 'edge', tech: '',
+      grid: { x: 0, y: 12.6 }, scene: true },
+
     // --- the main line, y = 4, west to east ---------------------------------
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
     { id: 'gateway',    name: 'Gateway',             kind: 'station', tech: 'K8s',           grid: { x: 2, y: 4 } },
@@ -109,17 +135,24 @@
     // The not-qualified walk climbs straight up on screen from the filter —
     // filter -> .not-qualified -> Centralized Audit are each dx === dy === -1 —
     // and the Mongo collection peels off due right (dx === -dy).
-    { id: 'not-qualified', name: '.not-qualified',   kind: 'terminus', tech: 'Kafka',        grid: { x: 5, y: 3 },
+    { id: 'not-qualified', name: '.not-qualified',   kind: 'terminus', tech: 'Kafka',        grid: { x: 4, y: 2 },
       role: 'End of the surveillance line' },
-    { id: 'audit',       name: 'Centralized Audit',  kind: 'station',  tech: 'K8s',          grid: { x: 4, y: 2 } },
-    { id: 'audit-store', name: 'ec-audit-events',    kind: 'depot',    tech: 'MongoDB',      grid: { x: 5, y: 1 } },
+    { id: 'audit',       name: 'Centralized Audit',  kind: 'station',  tech: 'K8s',          grid: { x: 3, y: 1 } },
+    { id: 'audit-store', name: 'ec-audit-events',    kind: 'depot',    tech: 'MongoDB',      grid: { x: 4, y: 0 } },
 
-    // --- the y = 3 row: everything fed from the main line's later stops -------
-    // Runs parallel to the main line one cell above it, so its rails never cross
-    // it — they only ever meet it at a station.
-    { id: 'quota',       name: 'Quota Manager',      kind: 'station',  tech: 'K8s',          grid: { x: 9, y: 3 } },
-    { id: 'alerting',    name: 'Alerting',           kind: 'station',  tech: 'K8s',          grid: { x: 11, y: 3 } },
-    { id: 'echo-engine', name: 'Echo Engine',        kind: 'station',  tech: 'K8s',          grid: { x: 13, y: 3 } },
+    /*
+     * The y = 2 row: everything fed from the main line's later stops.
+     *
+     * Two cells above the main line, not one. One was enough while buildings
+     * sat on their own cells, but a station that steps aside from its track
+     * reaches 0.72 back plus its own half-depth, which put the main line's
+     * buildings straight on top of this row's rails. Two cells leaves 0.82 of
+     * clearance. Every edge here is still on a clean axis: Policy Evaluator to
+     * Quota Manager is dx = -dy, and the row itself runs along constant y.
+     */
+    { id: 'quota',       name: 'Quota Manager',      kind: 'station',  tech: 'K8s',          grid: { x: 10, y: 2 } },
+    { id: 'alerting',    name: 'Alerting',           kind: 'station',  tech: 'K8s',          grid: { x: 12, y: 2 } },
+    { id: 'echo-engine', name: 'Echo Engine',        kind: 'station',  tech: 'K8s',          grid: { x: 14, y: 2 } },
 
     // --- upstream and control ------------------------------------------------
     { id: 'manual-run',     name: 'Manual Run',      kind: 'station',  tech: 'K8s',          grid: { x: 0, y: 2 } },
@@ -148,6 +181,17 @@
      *
      * Sourced to the repo owner. See the note on the archive stop above.
      */
+    /*
+     * The line out through the tunnel. One straight run along x = 0: platform
+     * to portal, then portal to the map edge. Drawn as two tracks so the
+     * mountain, which is painted after the flat pass, buries the middle of it
+     * and leaves the emerging length visible below the portal.
+     */
+    { from: 'archive-halt', to: 'tunnel', transport: 'rail', scene: true,
+      topic: 'the line out of the Archive' },
+    { from: 'tunnel',       to: 'beyond', transport: 'rail', scene: true,
+      topic: 'beyond the portal' },
+
     { from: 'archive',   to: 'ea-s3',     transport: 'belt',
       topic: 'archived documents -> EA S3 bucket',
       src: 'repo owner (not in knowledge/)' },
