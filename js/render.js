@@ -114,31 +114,20 @@ var Render = (function () {
    * `ga` and `gb` are grid points, already trimmed back to each stop's apron
    * by the caller — this function no longer knows about stops at all.
    */
-  function edgePoints(canvas, ga, gb, bow, ctrl) {
-    var p = Iso.toScreen(ga.x, ga.y, canvas);
-    var q = Iso.toScreen(gb.x, gb.y, canvas);
-    if (ctrl) {
-      // A curve with a chosen control point, sampled in GRID space and then
-      // projected — projecting the control point and curving in screen space
-      // would bend it off the isometric plane.
-      var pts = [];
-      for (var j = 0; j <= 24; j++) {
-        var g = Iso.quadPoint(ga, ctrl, gb, j / 24);
-        pts.push(Iso.toScreen(g.x, g.y, canvas));
-      }
-      return pts;
-    }
-    if (!bow) return [p, q];
-    var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
-    var vx = q.x - p.x, vy = q.y - p.y;
-    var len = Math.sqrt(vx * vx + vy * vy) || 1;
-    var cx = mx + (-vy / len) * Iso.TILE_H * bow * Iso.cam.zoom;
-    var cy = my + (vx / len) * Iso.TILE_H * bow * Iso.cam.zoom;
+  function edgePoints(canvas, ga, gb, track) {
+    /*
+     * Both curve kinds go through the same control point and the same sampler.
+     * A bow used to be struck in screen space here and nowhere else, which is
+     * how it became possible for a rail to curve while the train ran the chord
+     * — Iso.trackControl is now the single answer to "where does this edge go",
+     * and js/main.js asks the same question of the same function.
+     */
+    var c = Iso.trackControl(track, ga, gb);
+    if (!c) return [Iso.toScreen(ga.x, ga.y, canvas), Iso.toScreen(gb.x, gb.y, canvas)];
     var pts = [];
-    for (var i = 0; i <= 20; i++) {                    // sample the quadratic
-      var t = i / 20, u = 1 - t;
-      pts.push({ x: u * u * p.x + 2 * u * t * cx + t * t * q.x,
-                 y: u * u * p.y + 2 * u * t * cy + t * t * q.y });
+    for (var j = 0; j <= 24; j++) {
+      var g = Iso.quadPoint(ga, c, gb, j / 24);
+      pts.push(Iso.toScreen(g.x, g.y, canvas));
     }
     return pts;
   }
@@ -257,7 +246,12 @@ var Render = (function () {
     external: [0.36, 0.32],
     archive:  [0.64, 0.50],
     archway:  [0, 0],          // the line runs THROUGH it, so never trimmed
-    sorting:  [0.52, 0.52],
+    // The works on the new line. All three pin an explicit aside, so a rail
+    // never actually gets trimmed at one — these are here so the fallback stays
+    // right if a works is ever put back on its own track cell.
+    sorting:  [0.74, 0.47],
+    filtering:[0.74, 0.47],
+    scanning: [0.74, 0.47],
     edge:     [0, 0]
   };
 
@@ -465,7 +459,7 @@ var Render = (function () {
       ga = placed(flow, a);
       gb = placed(flow, b);
     }
-    var pts = edgePoints(canvas, ga, gb, track.bow, track.ctrl);
+    var pts = edgePoints(canvas, ga, gb, track);
 
     /*
      * Config sync and audit plumbing. Real edges, but not the document's
@@ -489,7 +483,11 @@ var Render = (function () {
 
   function drawStop(ctx, canvas, stop, state, z, t) {
     if (stop.kind === 'edge') return;                    // a bare end of line
+    // The three works on the new line. Same bones, different roof machinery —
+    // see the WORKS section of sprites.js.
     if (stop.kind === 'sorting') return Sprites.sortingStation(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'filtering') return Sprites.filterStation(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'scanning') return Sprites.scanStation(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'archive') return Sprites.archive(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'station') return Sprites.station(ctx, canvas, stop, state, z);
     if (stop.kind === 'yard') return Sprites.depot(ctx, canvas, stop, state, z);

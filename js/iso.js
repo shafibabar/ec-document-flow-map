@@ -17,6 +17,11 @@ var Iso = (function () {
     return { x: (gx - gy) * (TILE_W / 2), y: (gx + gy) * (TILE_H / 2) };
   }
 
+  /** Unscaled world pixels -> grid. The exact inverse of toWorld. */
+  function fromWorld(wx, wy) {
+    return { x: wy / TILE_H + wx / TILE_W, y: wy / TILE_H - wx / TILE_W };
+  }
+
   /** Grid -> screen, applying the camera. */
   function toScreen(gx, gy, canvas) {
     var w = toWorld(gx, gy);
@@ -91,6 +96,36 @@ var Iso = (function () {
     var u = 1 - t;
     return { x: u * u * p0.x + 2 * u * t * c.x + t * t * p1.x,
              y: u * u * p0.y + 2 * u * t * c.y + t * t * p1.y };
+  }
+
+  /*
+   * The control point for a BOWED edge, expressed in grid space.
+   *
+   * A bow is authored as a perpendicular offset in world pixels — one TILE_H
+   * per unit of bow — because that is the thing you are judging when you tune
+   * one. But the renderer and the engine both need it as a control point, and
+   * they must agree: a rail drawn as a curve while the train runs the chord is
+   * a train off its rails, which is exactly what happened when a bow was added
+   * to a hop a scenario actually walks.
+   *
+   * Deriving it once, here, makes that impossible. The projection is affine, so
+   * a quadratic struck through this point in grid space and the same curve
+   * struck in screen space are the same curve — there is no approximation in
+   * moving the arithmetic here.
+   */
+  function bowControl(ga, gb, bow) {
+    var p = toWorld(ga.x, ga.y), q = toWorld(gb.x, gb.y);
+    var vx = q.x - p.x, vy = q.y - p.y;
+    var L = Math.sqrt(vx * vx + vy * vy) || 1;
+    return fromWorld((p.x + q.x) / 2 + (-vy / L) * TILE_H * bow,
+                     (p.y + q.y) / 2 + (vx / L) * TILE_H * bow);
+  }
+
+  /** The control point a track wants, whichever way it was authored. */
+  function trackControl(track, ga, gb) {
+    if (track.ctrl) return track.ctrl;
+    if (track.bow) return bowControl(ga, gb, track.bow);
+    return null;
   }
 
   /** Trace a tile diamond centred on a grid cell. Caller strokes or fills. */
@@ -212,9 +247,10 @@ var Iso = (function () {
 
   return {
     TILE_W: TILE_W, TILE_H: TILE_H, LOOP_R: LOOP_R, cam: cam,
-    toWorld: toWorld, toScreen: toScreen,
+    toWorld: toWorld, fromWorld: fromWorld, toScreen: toScreen,
     lookAt: lookAt, glideTo: glideTo, pan: pan, zoomBy: zoomBy,
     frame: frame, tilePath: tilePath, loopPoint: loopPoint, quadPoint: quadPoint,
+    bowControl: bowControl, trackControl: trackControl,
     shade: shade, corners: corners, poly: poly, up: up,
     box: box, roof: roof, cylinder: cylinder
   };

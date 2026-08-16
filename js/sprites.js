@@ -646,80 +646,597 @@ var Sprites = (function () {
   }
 
   /*
-   * Queue Qualifier: a station whose job is written into its architecture.
+   * ======================================================================
+   * THE WORKS: the three pipeline stations on the new line.
+   * ======================================================================
+   *
+   * Queue Qualifier, Surveillance Filter and Policy Evaluator are not station
+   * houses. They are industrial works — layered blocks with FLAT roofs, an
+   * external steel frame standing proud of the walls, and a roof deck carrying
+   * the machinery that says what the service does.
+   *
+   * Three rules, and they are the whole style:
+   *
+   *   1. No pitched roof anywhere in here, and no single cuboid standing on its
+   *      own. A flat roof is not a preference — it is the deck the machinery
+   *      needs, and the machinery is the part that identifies the service.
+   *   2. Layered geometry: a main hall, a rear range of smaller utility blocks
+   *      butted against it, a front annex, a stair core breaking the skyline.
+   *      Assembled from interconnected blocks rather than carved from one.
+   *   3. The three share every bone — same plinth, same hall, same frame, same
+   *      wall treatment — and differ ONLY in what stands on the roof. That is
+   *      what makes the line read as one plant while each stop stays
+   *      recognisable from across the map.
+   *
+   * The blocks are laid out so no two footprints overlap, which is what lets a
+   * plain back-to-front sort on gx + gy get the occlusion right inside one
+   * building — the same painter's rule render.js uses between buildings.
+   */
+  /*
+   * Every colour here is a literal #rrggbb, and that is load-bearing rather
+   * than tidiness: Iso.box re-shades whatever it is handed and parses it as
+   * hex, so feeding it an Iso.shade() result — which comes back as "rgb(r,g,b)"
+   * — parses to NaN, canvas silently keeps the previous fill, and the surface
+   * comes out solid black. Shade results are safe as a strokeStyle or a poly
+   * fill; they are never safe as a box colour.
+   */
+  var WORKS = {
+    wall:    '#c9d0d6',
+    wallLo:  '#aab3bb',
+    deck:    '#aeb6bd',
+    membrane:'#8d969e',
+    trim:    '#8e979f',
+    steel:   '#7f8b95',
+    dark:    '#28313a',
+    glass:   '#3f5f7d',
+    pane:    '#7fb2c9'
+  };
+
+  var WORKS_HW = 0.46, WORKS_HH = 0.23, WORKS_H = 30;   // the main hall
+  var WORKS_BASE = 3;                                    // platform height
+  var WORKS_ROOF = WORKS_BASE + WORKS_H + 3.8;           // the roof membrane
+
+  /*
+   * Iso.cylinder and the cone below take a radius in the same units Iso.box
+   * takes half-extents, and the two are NOT the same size on screen. A box of
+   * half-extent h spans (h + h) * TILE_W / 2 across; a cylinder of radius r
+   * spans r * TILE_W. So:
+   *
+   *   - a vessel of radius r covers 2r of GRID, not r. Spacing roof plant by
+   *     eye against the box extents is how three canisters ended up overlapping
+   *     each other and hanging off the parapet.
+   *   - a box matches a cylinder's screen width when its half-extent equals r.
+   *     vesselBox(r, k) is therefore the half-extent of a collar, plinth or cap
+   *     k times as wide as the vessel it belongs to.
+   */
+  function vesselBox(r, k) { return r * k; }
+
+  /** Paint a list of { d, paint } back to front. */
+  function sortedPaint(items) {
+    items.slice().sort(function (a, b) { return a.d - b.d; })
+         .forEach(function (i) { i.paint(); });
+  }
+
+  /** Paint a list of solid blocks back to front, by their own footprint depth. */
+  function worksBlocks(ctx, canvas, list) {
+    sortedPaint(list.map(function (b) {
+      return { d: b.x + b.y, paint: function () {
+        I.box(ctx, canvas, b.x, b.y, b.hw, b.hh, b.h, b.c, b.base);
+      } };
+    }));
+  }
+
+  /*
+   * The external structural frame: two portal frames straddling the main hall,
+   * legs planted outside its walls and a tie beam carried over the roof.
+   *
+   * Drawn in two halves. The legs standing BEHIND the hall go down before it
+   * and the rest after, so the hall sits inside its frame rather than in front
+   * of it — the same two-part trick the Gateway archway uses to let a train
+   * pass through it.
+   */
+  /*
+   * The frame is deliberately ASYMMETRIC: the rear legs stand just clear of the
+   * back wall, the front legs stand well out over the platform. That gap is
+   * what the hoist below needs — on a symmetric frame its hook comes down
+   * within a few centimetres of the front wall and reads as a cable draped
+   * down the building rather than a crane working the platform.
+   */
+  var FRAME_BACK = WORKS_HH + 0.07;
+  var FRAME_FRONT = WORKS_HH + 0.16;
+  var FRAME_H = WORKS_H + 12;
+  var FRAME_TOP = WORKS_BASE + FRAME_H;
+
+  function worksFrame(ctx, canvas, gx, gy, part) {
+    var LEG = 0.028, span = WORKS_HW * 0.74;
+    [gx - span, gx + span].forEach(function (px) {
+      if (part === 'back') {
+        I.box(ctx, canvas, px, gy - FRAME_BACK, LEG, LEG, FRAME_H, WORKS.steel, WORKS_BASE);
+      } else {
+        I.box(ctx, canvas, px, gy + FRAME_FRONT, LEG, LEG, FRAME_H, WORKS.steel, WORKS_BASE);
+        I.box(ctx, canvas, px, gy + (FRAME_FRONT - FRAME_BACK) / 2, LEG,
+              (FRAME_FRONT + FRAME_BACK) / 2, 4, WORKS.trim, FRAME_TOP);   // cross tie
+      }
+    });
+    if (part === 'front') {
+      // A longitudinal tie joining the two portals, so the frame reads as a
+      // cage around the building rather than two unrelated hoops. It rides
+      // above the roof, so nothing can occlude it and its order is free.
+      [gy - FRAME_BACK, gy + FRAME_FRONT].forEach(function (py) {
+        I.box(ctx, canvas, gx, py, span, LEG * 0.8, 3, WORKS.trim, FRAME_TOP + 4);
+      });
+    }
+  }
+
+  /*
+   * The hoist: a trolley running along the front tie of the frame, lowering and
+   * raising a hook over the platform.
+   *
+   * It hangs on the FRONT tie rather than crossing the roof on purpose. A
+   * travelling crane over the deck would have to thread between whatever
+   * machinery that particular works carries, and it would collide with the
+   * canisters on one of them; on the front tie it is clear of all three, it is
+   * visibly serving the platform, and it costs the shared shell nothing.
+   */
+  function worksHoist(ctx, canvas, gx, gy, z, t) {
+    var top = FRAME_TOP + 4;
+    var cyc = ((t || 0) % 7000) / 7000;
+    var run = Math.sin(cyc * Math.PI * 2);                 // travel along the tie
+    var tx = gx + run * WORKS_HW * 0.62, ty = gy + FRAME_FRONT;
+    // The hook drops while the trolley is near the ends of its run and rides
+    // high across the middle, so it reads as fetching and carrying.
+    var drop = 6 + 13 * Math.max(0, Math.cos(cyc * Math.PI * 4));
+
+    I.box(ctx, canvas, tx, ty, 0.035, 0.030, 4, WORKS.steel, top - 4);   // trolley
+    var p = I.up(I.toScreen(tx, ty, canvas), top - 4);
+    ctx.strokeStyle = '#5f6a74';
+    ctx.lineWidth = Math.max(0.5, 1 * z);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x, p.y + drop * z);
+    ctx.stroke();
+    // The load, in crate brown rather than steel: a bare hook reads as a smudge
+    // against the wall behind it, a crate reads as a crane doing something.
+    I.box(ctx, canvas, tx, ty, 0.026, 0.020, 5, '#c2a06a', top - 4 - drop);
+  }
+
+  /*
+   * The shell every works shares: the platform it stands on, the layered
+   * blocks, the frame around them and the flat roof deck on top. The caller
+   * adds only its own roof machinery, on WORKS_ROOF.
+   */
+  function worksShell(ctx, canvas, gx, gy, state, accent, z, t) {
+    var wall = state === 'current' ? '#dde3e8' : WORKS.wall;
+    var lo = state === 'current' ? '#bcc5cc' : WORKS.wallLo;
+
+    /*
+     * The dedicated railway platform. This is the buffer the brief asks for —
+     * the works never touches the ballast, it stands on a deck that ends short
+     * of the line. render.js lays a second strip from here out to the track
+     * itself; both are PALETTE.platform at height 3 so the two read as one
+     * continuous deck rather than two slabs at slightly different levels.
+     */
+    I.box(ctx, canvas, gx, gy + 0.03, 0.74, 0.44, WORKS_BASE, PALETTE.platform);
+    var pc = I.corners(gx, gy + 0.03, 0.74, 0.44, canvas);
+    ctx.strokeStyle = 'rgba(90,80,64,.30)';
+    ctx.lineWidth = Math.max(0.5, 1 * z);
+    I.poly(ctx, [I.up(pc.n, WORKS_BASE), I.up(pc.e, WORKS_BASE),
+                 I.up(pc.s, WORKS_BASE), I.up(pc.w, WORKS_BASE)]);
+    ctx.stroke();
+
+    worksFrame(ctx, canvas, gx, gy, 'back');
+
+    worksBlocks(ctx, canvas, [
+      // Rear range: a run of low utility blocks butted against the back wall.
+      { x: gx - 0.24, y: gy - 0.30, hw: 0.24, hh: 0.07, h: 21, c: lo, base: WORKS_BASE },
+      { x: gx + 0.26, y: gy - 0.30, hw: 0.16, hh: 0.07, h: 14, c: lo, base: WORKS_BASE },
+      // The main hall.
+      { x: gx, y: gy, hw: WORKS_HW, hh: WORKS_HH, h: WORKS_H, c: wall, base: WORKS_BASE },
+      // The stair core, off the hall's east end — the one thing that breaks
+      // the flat skyline, and deliberately not a chimney or a spire.
+      { x: gx + 0.56, y: gy - 0.12, hw: 0.09, hh: 0.11, h: 44, c: lo, base: WORKS_BASE },
+      // Front annex and a plant kiosk, on the platform side. Kept inboard of
+      // FRAME_FRONT so the frame's front legs land on clear platform.
+      { x: gx + 0.26, y: gy + 0.29, hw: 0.18, hh: 0.06, h: 13, c: lo, base: WORKS_BASE },
+      { x: gx - 0.30, y: gy + 0.29, hw: 0.14, hh: 0.06, h: 9, c: lo, base: WORKS_BASE }
+    ]);
+
+    /*
+     * The stair core's glazed slot and cap. Drawn here rather than inside the
+     * block list because a block is a solid and this is a face treatment; the
+     * core sits at a greater depth than the hall, so by this point it has
+     * already been painted and nothing else will cover it.
+     */
+    var sc = I.corners(gx + 0.56, gy - 0.12, 0.09, 0.11, canvas);
+    var sf = function (u, v) {
+      return facePoint(I.up(sc.w, WORKS_BASE), I.up(sc.s, WORKS_BASE),
+                       I.up(sc.w, WORKS_BASE + 44), I.up(sc.s, WORKS_BASE + 44), u, v);
+    };
+    faceQuad(ctx, sf, 0.30, 0.70, 0.10, 0.90, WORKS.glass);
+    for (var fl = 0; fl < 5; fl++) {
+      faceQuad(ctx, sf, 0.34, 0.66, 0.14 + fl * 0.155, 0.14 + fl * 0.155 + 0.10, WORKS.pane);
+    }
+    I.box(ctx, canvas, gx + 0.56, gy - 0.12, 0.105, 0.125, 3, WORKS.trim, WORKS_BASE + 44);
+    I.box(ctx, canvas, gx + 0.56, gy - 0.12, 0.05, 0.05, 4, accent, WORKS_BASE + 47);
+
+    // --- the walls -----------------------------------------------------------
+    var c = I.corners(gx, gy, WORKS_HW, WORKS_HH, canvas);
+    var B = WORKS_BASE, T = WORKS_BASE + WORKS_H;
+    var fL = function (u, v) {           // the wall facing the track
+      return facePoint(I.up(c.w, B), I.up(c.s, B), I.up(c.w, T), I.up(c.s, T), u, v);
+    };
+    var fR = function (u, v) {           // the east gable wall
+      return facePoint(I.up(c.s, B), I.up(c.e, B), I.up(c.s, T), I.up(c.e, T), u, v);
+    };
+
+    /*
+     * A continuous glazing band on both visible walls, and pilasters between
+     * the bays so the wall has relief rather than being a flat painted panel.
+     *
+     * The pilaster tone is derived from the FACE, not from the wall colour.
+     * Iso.box already darkens the two visible faces by different amounts, so a
+     * pilaster shaded off the raw wall colour comes out lighter than the wall
+     * it is supposed to be standing on — it read as white stripes, not relief.
+     */
+    [[fL, 9, -0.44], [fR, 4, -0.26]].forEach(function (spec) {
+      var f = spec[0], bays = spec[1];
+      var rib = I.shade(wall, spec[2]);
+      faceQuad(ctx, f, 0.05, 0.95, 0.50, 0.74, WORKS.glass);
+      for (var i = 0; i < bays; i++) {
+        var u0 = 0.07 + i * (0.86 / bays);
+        faceQuad(ctx, f, u0, u0 + 0.86 / bays - 0.022, 0.53, 0.71, WORKS.pane);
+      }
+      for (i = 1; i < bays; i++) {
+        var p = 0.05 + i * (0.90 / bays);
+        faceQuad(ctx, f, p - 0.008, p + 0.008, 0.02, 0.98, rib);
+      }
+    });
+
+    // The goods door, on the track side, with a painted threshold.
+    faceQuad(ctx, fL, 0.40, 0.60, 0.02, 0.36, WORKS.dark);
+    I.poly(ctx, [fL(0.38, 0.02), fL(0.62, 0.02), fL(0.62, 0.055), fL(0.38, 0.055)], accent);
+
+    // --- the flat roof -------------------------------------------------------
+    // A deck slab with a parapet standing proud of a darker membrane, so the
+    // roof reads as a surface with an edge rather than a lid. Everything each
+    // works puts on its roof stands on the membrane, at WORKS_ROOF.
+    I.box(ctx, canvas, gx, gy, WORKS_HW + 0.025, WORKS_HH + 0.025, 3, WORKS.deck, T);
+    I.box(ctx, canvas, gx, gy, WORKS_HW - 0.02, WORKS_HH - 0.02, 0.8, WORKS.membrane, T + 3);
+
+    worksFrame(ctx, canvas, gx, gy, 'front');
+    worksHoist(ctx, canvas, gx, gy, z, t);
+  }
+
+  /** A cyclonic separator's cone: an inverted cone under a lit rim. */
+  function cone(ctx, canvas, gx, gy, r, base, h, colour) {
+    var z = I.cam.zoom;
+    var c = I.toScreen(gx, gy, canvas);
+    var rx = r * I.TILE_W * z, ry = r * I.TILE_H * z;
+    var ty = c.y - (base + h) * z, by = c.y - base * z;
+    ctx.beginPath();
+    ctx.moveTo(c.x - rx, ty);
+    ctx.lineTo(c.x, by);                                    // down to the apex
+    ctx.lineTo(c.x + rx, ty);
+    ctx.ellipse(c.x, ty, rx, ry, 0, 0, Math.PI, true);      // back over the far rim
+    ctx.closePath();
+    ctx.fillStyle = I.shade(colour, -0.24);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(c.x, ty, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = I.shade(colour, 0.16);
+    ctx.fill();
+  }
+
+  /** A banding ring round a roof cylinder, so it reads as a pressure vessel. */
+  function band(ctx, canvas, gx, gy, r, at, colour, z) {
+    var c = I.toScreen(gx, gy, canvas);
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = Math.max(0.7, 2 * z);
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y - at * z, r * I.TILE_W * z, r * I.TILE_H * z, 0, 0, Math.PI);
+    ctx.stroke();
+  }
+
+  /*
+   * Queue Qualifier: a multi-lane gating rig across the flat roof.
    *
    * The service takes a communication and decides which of the tenant's
-   * pipelines it belongs to — it sorts a queue. So the building carries a
-   * sorting gate: a gantry over the platform with three semaphore arms that
-   * drop in sequence, and a departure-board display whose rows advance. Both
-   * animate off the same clock, which is what makes it read as machinery
-   * working rather than decoration bolted on.
-   *
-   * Everything else follows the Archive's arrangement — the building set back,
-   * a platform between it and the track, and its name on the standard board
-   * rather than painted across the wall.
+   * pipelines it belongs to — it sorts a queue into lanes. So the roof carries
+   * three lanes with parcels running along them and a gantry whose three gate
+   * arms drop in turn, letting one lane through at a time. All of it is on one
+   * clock, which is what makes it read as machinery working rather than
+   * ornament bolted on.
    */
   function sortingStation(ctx, canvas, stop, state, z, t) {
     var gx = stop.grid.x, gy = stop.grid.y;
-    var HW = 0.44, HH = 0.30, H = 30;
-    var wall = state === 'current' ? '#e6dcc9' : PALETTE.wall;
-    var accent = state === 'current' ? '#f0a132' : '#b5842f';
+    var accent = state === 'current' ? '#f0a132' : '#e0902c';
     var beat = ((t || 0) % 2600) / 2600;
+    var RB = WORKS_ROOF;
 
-    I.box(ctx, canvas, gx, gy, HW + 0.10, HH + 0.10, 2, PALETTE.stone);   // apron
-    I.box(ctx, canvas, gx, gy, HW, HH, H, wall, 2);                       // hall
-    I.roof(ctx, canvas, gx, gy, HW + 0.06, HH + 0.06, H + 2, 13, accent);
+    worksShell(ctx, canvas, gx, gy, state, accent, z, t);
 
-    // --- the departure board, on the face toward the track -------------------
-    var c = I.corners(gx, gy, HW, HH, canvas);
-    var f = function (u, v) {
-      return facePoint(I.up(c.w, 2), I.up(c.s, 2), I.up(c.w, H + 2), I.up(c.s, H + 2), u, v);
-    };
-    faceQuad(ctx, f, 0.10, 0.62, 0.44, 0.80, '#1d242a');
-    for (var r = 0; r < 4; r++) {
-      // Rows advance up the board, one leaving the top as one joins the bottom:
-      // a queue being worked off.
-      var slot = (r + beat) % 4;
-      var v0 = 0.47 + slot * 0.075;
-      var lit = slot < 1;
-      I.poly(ctx, [f(0.13, v0), f(0.13 + (lit ? 0.30 : 0.44), v0),
-                   f(0.13 + (lit ? 0.30 : 0.44), v0 + 0.045),
-                   f(0.13, v0 + 0.045)], lit ? '#f0b040' : '#3f8f6a');
-    }
+    var LANES = [-0.11, 0, 0.11];
+    var items = [];
 
-    // --- the sorting gate: a gantry over the platform ------------------------
-    // Two legs planted between the building and the track, a beam across them,
-    // and three arms that drop in turn like a router picking a lane.
-    var gyGate = gy + 0.52;
-    [-0.34, 0.34].forEach(function (o) {
-      I.box(ctx, canvas, gx + o, gyGate, 0.045, 0.045, 26, PALETTE.steel, 2);
+    // The three sorting lanes, and the parcels running along them. A parcel
+    // turns the accent colour once it is past the gate: that is the qualifying.
+    LANES.forEach(function (off, li) {
+      var ly = gy + off;
+      items.push({ d: gx + ly - 0.30, paint: function () {
+        I.box(ctx, canvas, gx, ly, 0.32, 0.020, 2, '#79828a', RB);
+      } });
+      for (var p = 0; p < 2; p++) {
+        var u = (((t || 0) / 2600) + li * 0.31 + p * 0.5) % 1;
+        var px = gx - 0.30 + u * 0.60;
+        items.push({ d: px + ly, paint: function () {
+          I.box(ctx, canvas, px, ly, 0.030, 0.020, 3.5, u > 0.55 ? accent : '#aab6bf', RB + 2);
+        } });
+      }
     });
-    I.box(ctx, canvas, gx, gyGate, 0.40, 0.05, 6, '#8a929a', 28);
 
-    for (var a = 0; a < 3; a++) {
-      var phase = (beat * 3 + a * 0.34) % 1;
-      var drop = phase < 0.30 ? Math.sin(phase / 0.30 * Math.PI) : 0;
-      var ax = gx - 0.24 + a * 0.24;
-      var pivot = I.up(I.toScreen(ax, gyGate, canvas), 28);
-      var len = 11 * z;
-      var ang = -Math.PI / 2 + drop * (Math.PI / 2.1);       // hangs down when dropped
-      ctx.strokeStyle = drop > 0.1 ? '#e0902c' : '#9aa4ad';
-      ctx.lineWidth = Math.max(0.9, 2.2 * z);
-      ctx.lineCap = 'round';
+    // The control cabin at the west end, with a lit window.
+    items.push({ d: gx - 0.36 + gy, paint: function () {
+      I.box(ctx, canvas, gx - 0.36, gy, 0.07, 0.10, 13, WORKS.wall, RB);
+      var cc = I.corners(gx - 0.36, gy, 0.07, 0.10, canvas);
+      var cf = function (u, v) {
+        return facePoint(I.up(cc.w, RB), I.up(cc.s, RB), I.up(cc.w, RB + 13), I.up(cc.s, RB + 13), u, v);
+      };
+      faceQuad(ctx, cf, 0.15, 0.85, 0.42, 0.80, beat < 0.5 ? '#9fc4d6' : '#7fa8bd');
+    } });
+
+    // The collection hopper at the east end, where the sorted lanes converge.
+    items.push({ d: gx + 0.34 + gy, paint: function () {
+      I.box(ctx, canvas, gx + 0.34, gy, 0.06, 0.15, 6, WORKS.wallLo, RB);
+      cone(ctx, canvas, gx + 0.34, gy, 0.062, RB + 6, 9, WORKS.trim);
+    } });
+
+    // The gantry, last: it spans every lane, so it belongs over all of them.
+    items.push({ d: gx + gy + 0.60, paint: function () {
+      var GX = gx + 0.04;
+      [-0.19, 0.19].forEach(function (o) {
+        I.box(ctx, canvas, GX, gy + o, 0.022, 0.022, 17, WORKS.steel, RB);
+      });
+      I.box(ctx, canvas, GX, gy, 0.024, 0.19, 4, WORKS.trim, RB + 17);
+
+      LANES.forEach(function (off, a) {
+        var phase = (beat * 3 + a * 0.34) % 1;
+        var drop = phase < 0.30 ? Math.sin(phase / 0.30 * Math.PI) : 0;
+        var pivot = I.up(I.toScreen(GX, gy + off, canvas), RB + 17);
+        var ang = -Math.PI / 2 + drop * (Math.PI / 2.1);
+        ctx.strokeStyle = drop > 0.1 ? accent : '#9aa4ad';
+        ctx.lineWidth = Math.max(0.9, 2 * z);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pivot.x, pivot.y);
+        ctx.lineTo(pivot.x + Math.cos(ang) * 9 * z, pivot.y - Math.sin(ang) * 9 * z);
+        ctx.stroke();
+        ctx.fillStyle = drop > 0.1 ? '#f0b040' : '#5f6a74';
+        ctx.beginPath();
+        ctx.arc(pivot.x, pivot.y, 2 * z, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    } });
+
+    sortedPaint(items);
+    worksSign(ctx, canvas, gx, gy, stop, state, z);
+  }
+
+  /*
+   * Surveillance Filter: a filtration plant on the flat roof.
+   *
+   * Three heavy-duty canisters standing on the deck, two cyclonic separators
+   * at the east end, and a header duct along the back wall with a spur up into
+   * every vessel. The service takes everything the qualifier passed and keeps
+   * only what has to be reviewed, and a filter house is what that looks like.
+   */
+  function filterStation(ctx, canvas, stop, state, z, t) {
+    var gx = stop.grid.x, gy = stop.grid.y;
+    var accent = state === 'current' ? '#f0a132' : '#3f8f9c';
+    var RB = WORKS_ROOF;
+    var items = [];
+
+    worksShell(ctx, canvas, gx, gy, state, accent, z, t);
+
+    // The intake header, running along the back of the deck.
+    items.push({ d: gx + gy - 0.22, paint: function () {
+      I.box(ctx, canvas, gx - 0.05, gy - 0.20, 0.32, 0.022, 7, WORKS.trim, RB);
+    } });
+
+    /*
+     * Three canisters, each on a collar, banded, with a spur duct back to the
+     * header. R is sized against the 2r grid coverage above, so all three plus
+     * the two cyclones sit inside the parapet with daylight between them.
+     */
+    var R = 0.052;
+    [-0.28, -0.05, 0.18].forEach(function (ox, i) {
+      var cx = gx + ox, cy = gy - 0.02;
+      items.push({ d: cx + cy, paint: function () {
+        I.box(ctx, canvas, cx, cy - 0.10, 0.014, 0.08, 4, WORKS.trim, RB + 5);  // spur
+        I.box(ctx, canvas, cx, cy, vesselBox(R, 1.24), vesselBox(R, 1.24),
+              2.5, WORKS.trim, RB);                                            // collar
+        I.cylinder(ctx, canvas, cx, cy, R, 22, WORKS.steel, RB + 2.5);
+        band(ctx, canvas, cx, cy, R, RB + 11, I.shade(WORKS.steel, -0.34), z);
+        band(ctx, canvas, cx, cy, R, RB + 18, I.shade(WORKS.steel, -0.34), z);
+        // A gauge collar in the accent, so the vessels carry the station's
+        // colour without repainting the whole roof.
+        band(ctx, canvas, cx, cy, R + 0.002, RB + 23, accent, z);
+        // The pulse of the filter: a level light that fills and fades.
+        var lvl = ((((t || 0) / 3000) + i * 0.33) % 1);
+        var lc = I.toScreen(cx, cy, canvas);
+        ctx.save();
+        ctx.fillStyle = accent;
+        ctx.globalAlpha = 0.30 + 0.55 * Math.sin(lvl * Math.PI);
+        ctx.beginPath();
+        ctx.arc(lc.x, lc.y - (RB + 7) * z, 1.7 * z, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } });
+    });
+
+    // Two cyclonic separators at the east end: a squat cone standing on a
+    // plinth on the deck with a short throat above it. Kept inboard of the
+    // parapet, because a cone whose apex reaches the roof edge reads as
+    // hanging off the side of the building rather than standing on it.
+    var CR = 0.042;
+    [[0.33, -0.08], [0.33, 0.09]].forEach(function (o) {
+      var cx = gx + o[0], cy = gy + o[1];
+      items.push({ d: cx + cy, paint: function () {
+        I.box(ctx, canvas, cx, cy, vesselBox(CR, 1.0), vesselBox(CR, 1.0),
+              3, WORKS.trim, RB);
+        cone(ctx, canvas, cx, cy, CR, RB + 3, 8, WORKS.wallLo);
+        I.cylinder(ctx, canvas, cx, cy, CR, 7, WORKS.steel, RB + 11);
+        I.box(ctx, canvas, cx, cy, vesselBox(CR, 1.0), vesselBox(CR, 1.0),
+              2, accent, RB + 18);
+      } });
+    });
+
+    // An extract fan on the deck's front edge, turning slowly.
+    items.push({ d: gx - 0.30 + gy + 0.15, paint: function () {
+      var fx = gx - 0.30, fy = gy + 0.15;
+      I.box(ctx, canvas, fx, fy, 0.09, 0.07, 5, WORKS.trim, RB);
+      var fc = I.up(I.toScreen(fx, fy, canvas), RB + 5);
+      ctx.fillStyle = '#5d666e';
       ctx.beginPath();
-      ctx.moveTo(pivot.x, pivot.y);
-      ctx.lineTo(pivot.x + Math.cos(ang) * len * 0.35, pivot.y - Math.sin(ang) * len);
-      ctx.stroke();
-      ctx.fillStyle = drop > 0.1 ? '#f0b040' : '#5f6a74';
-      ctx.beginPath();
-      ctx.arc(pivot.x, pivot.y, 2.2 * z, 0, Math.PI * 2);
+      ctx.ellipse(fc.x, fc.y, 7 * z, 3.4 * z, 0, 0, Math.PI * 2);
       ctx.fill();
+      var a0 = ((t || 0) / 1300) % 1 * Math.PI * 2;
+      ctx.strokeStyle = '#cdd3d8';
+      ctx.lineWidth = Math.max(0.6, 1.3 * z);
+      for (var b = 0; b < 3; b++) {
+        var ang = a0 + b * (Math.PI * 2 / 3);
+        ctx.beginPath();
+        ctx.moveTo(fc.x, fc.y);
+        ctx.lineTo(fc.x + Math.cos(ang) * 6 * z, fc.y + Math.sin(ang) * 2.9 * z);
+        ctx.stroke();
+      }
+    } });
+
+    sortedPaint(items);
+    worksSign(ctx, canvas, gx, gy, stop, state, z);
+  }
+
+  /*
+   * Policy Evaluator: a quality-control scanning arch over a roof conveyor.
+   *
+   * Items run along a short line on the deck, pass under an inspection arch
+   * whose validation lights sweep across them, and come out the far side either
+   * cleared or flagged — which is exactly what the service decides. Two
+   * mechanised testing arms reach in as each item goes under.
+   */
+  function scanStation(ctx, canvas, stop, state, z, t) {
+    var gx = stop.grid.x, gy = stop.grid.y;
+    var accent = state === 'current' ? '#f0a132' : '#7a5aa3';
+    var RB = WORKS_ROOF;
+    var cy = gy + 0.02, AX = gx + 0.05;               // conveyor line, arch position
+    var items = [];
+
+    worksShell(ctx, canvas, gx, gy, state, accent, z, t);
+
+    // The roof conveyor: a bed, a running surface, and roller ticks sliding
+    // along it so the line reads as moving even between items.
+    items.push({ d: gx + cy - 0.40, paint: function () {
+      I.box(ctx, canvas, gx, cy, 0.36, 0.032, 4, '#5b636a', RB);
+      I.box(ctx, canvas, gx, cy, 0.35, 0.026, 1.5, '#79828a', RB + 4);
+      var p = I.up(I.toScreen(gx - 0.35, cy, canvas), RB + 5.5);
+      var q = I.up(I.toScreen(gx + 0.35, cy, canvas), RB + 5.5);
+      var vx = q.x - p.x, vy = q.y - p.y, len = Math.hypot(vx, vy) || 1;
+      var nx = -vy / len, ny = vx / len, sp = 7 * z;
+      ctx.strokeStyle = 'rgba(30,36,41,.45)';
+      ctx.lineWidth = Math.max(0.5, 1 * z);
+      ctx.beginPath();
+      for (var d = ((t || 0) / 40) % sp; d < len; d += sp) {
+        var mx = p.x + vx * (d / len), my = p.y + vy * (d / len);
+        ctx.moveTo(mx - nx * 2.6 * z, my - ny * 2.6 * z);
+        ctx.lineTo(mx + nx * 2.6 * z, my + ny * 2.6 * z);
+      }
+      ctx.stroke();
+    } });
+
+    // The items under evaluation. Grey going in; cleared or flagged coming out,
+    // decided per item so the roof shows both outcomes rather than one.
+    for (var i = 0; i < 3; i++) {
+      (function (n) {
+        var u = ((((t || 0) / 5200) + n / 3) % 1);
+        var ix = gx - 0.34 + u * 0.68;
+        var past = ix > AX;
+        var pass = (n % 3) !== 1;
+        items.push({ d: ix + cy + 0.01, paint: function () {
+          I.box(ctx, canvas, ix, cy, 0.032, 0.021, 4,
+                past ? (pass ? '#4ec08a' : '#e0902c') : '#93a0aa', RB + 5.5);
+        } });
+      })(i);
     }
 
-    if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.66, '#f0a132', z);
+    // The results cabinet at the west end, its readout ticking over.
+    items.push({ d: gx - 0.40 + gy, paint: function () {
+      I.box(ctx, canvas, gx - 0.40, gy, 0.06, 0.11, 15, WORKS.wall, RB);
+      var cc = I.corners(gx - 0.40, gy, 0.06, 0.11, canvas);
+      var cf = function (u, v) {
+        return facePoint(I.up(cc.w, RB), I.up(cc.s, RB), I.up(cc.w, RB + 15), I.up(cc.s, RB + 15), u, v);
+      };
+      faceQuad(ctx, cf, 0.14, 0.86, 0.40, 0.84, '#1d242a');
+      for (var r = 0; r < 3; r++) {
+        var slot = (r + (((t || 0) / 1700) % 1)) % 3;
+        var v0 = 0.44 + slot * 0.13;
+        I.poly(ctx, [cf(0.20, v0), cf(0.20 + (slot < 1 ? 0.34 : 0.58), v0),
+                     cf(0.20 + (slot < 1 ? 0.34 : 0.58), v0 + 0.07),
+                     cf(0.20, v0 + 0.07)], slot < 1 ? accent : '#3f8f6a');
+      }
+    } });
 
-    var top = I.up(I.toScreen(gx, gy, canvas), 2);
-    nameboard(ctx, top.x, top.y - 60 * z, stop.name, stop.tech, z);
+    // The scanning arch itself, and the testing arms that reach in under it.
+    items.push({ d: gx + gy + 0.60, paint: function () {
+      [-0.17, 0.21].forEach(function (o) {
+        I.box(ctx, canvas, AX, gy + o, 0.026, 0.026, 19, WORKS.steel, RB);
+      });
+      I.box(ctx, canvas, AX, cy, 0.030, 0.19, 5, accent, RB + 19);
+      I.box(ctx, canvas, AX, cy, 0.036, 0.20, 1.5, WORKS.trim, RB + 24);
+
+      // The validation light array, sweeping along the underside of the head.
+      var sweep = (((t || 0) / 900) % 1);
+      for (var L = 0; L < 5; L++) {
+        var ly = gy - 0.15 + L * 0.085;
+        var lp = I.up(I.toScreen(AX, ly, canvas), RB + 18);
+        var on = Math.abs(((sweep * 5) % 5) - L) < 0.9;
+        ctx.fillStyle = on ? '#ffd479' : '#4a545b';
+        ctx.beginPath();
+        ctx.arc(lp.x, lp.y, (on ? 1.5 : 1.1) * z, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Two testing arms, reaching in toward the line and back out again.
+      var reach = 0.5 + 0.5 * Math.sin(((t || 0) / 700));
+      [-1, 1].forEach(function (s) {
+        var base = I.up(I.toScreen(AX - 0.10 * s, cy + 0.13 * s, canvas), RB + 6);
+        var tip = I.up(I.toScreen(AX - 0.10 * s + 0.05 * s * reach,
+                                  cy + (0.13 - 0.10 * reach) * s, canvas), RB + 9);
+        ctx.strokeStyle = WORKS.steel;
+        ctx.lineWidth = Math.max(0.8, 1.8 * z);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(base.x, base.y);
+        ctx.lineTo(tip.x, tip.y);
+        ctx.stroke();
+        ctx.fillStyle = reach > 0.7 ? '#ffd479' : '#6b7580';
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, 1.8 * z, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    } });
+
+    sortedPaint(items);
+    worksSign(ctx, canvas, gx, gy, stop, state, z);
+  }
+
+  /*
+   * The works' halo and nameboard. One place, so the three cannot drift apart:
+   * the plaque carries the service name with its platform — "k8s" — on the
+   * line below it, in the same box.
+   */
+  function worksSign(ctx, canvas, gx, gy, stop, state, z) {
+    if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.70, '#f0a132', z);
+    var top = I.up(I.toScreen(gx, gy, canvas), WORKS_BASE);
+    nameboard(ctx, top.x, top.y - 76 * z, stop.name, stop.tech, z);
   }
 
   /*
@@ -976,7 +1493,9 @@ var Sprites = (function () {
     identity: identity, assign: assign, hash: hash,
     station: station, s3Depot: s3Depot, depot: depot, vault: vault,
     siding: siding, terminus: terminus, external: external, archive: archive,
-    archway: archway, ARCH_SPAN: ARCH_SPAN, sortingStation: sortingStation,
+    archway: archway, ARCH_SPAN: ARCH_SPAN,
+    sortingStation: sortingStation, filterStation: filterStation,
+    scanStation: scanStation,
     platformStrip: platformStrip,
     train: train, cart: cart, beltBox: beltBox, tree: tree,
     nameboard: nameboard, roundRect: roundRect, shadowBlob: shadowBlob

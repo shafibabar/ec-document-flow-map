@@ -69,15 +69,18 @@
       }
 
       /*
-       * Follow the track, curve and all. A hop whose rail carries a control
-       * point is drawn as a quadratic, so the train has to run the same
-       * quadratic or it cuts the corner and leaves the rails.
+       * Follow the track, curve and all. A curved hop has to be run as the
+       * same curve the renderer draws or the train cuts the corner and leaves
+       * the rails — and that means asking Iso.trackControl rather than testing
+       * for `ctrl` here, because a `bow` is just as much a curve and this is
+       * exactly the check that missed one.
        */
       var link = trackBetween(prev.at, cur.at);
+      var ctrl = link ? Iso.trackControl(link, from.grid, here.grid) : null;
       var pos, ahead2;
-      if (link && link.ctrl) {
-        pos = Iso.quadPoint(from.grid, link.ctrl, here.grid, e);
-        ahead2 = Iso.quadPoint(from.grid, link.ctrl, here.grid, Math.min(1, e + 0.02));
+      if (ctrl) {
+        pos = Iso.quadPoint(from.grid, ctrl, here.grid, e);
+        ahead2 = Iso.quadPoint(from.grid, ctrl, here.grid, Math.min(1, e + 0.02));
       } else {
         pos = { x: from.grid.x + (here.grid.x - from.grid.x) * e,
                 y: from.grid.y + (here.grid.y - from.grid.y) * e };

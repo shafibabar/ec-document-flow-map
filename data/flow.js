@@ -117,27 +117,52 @@
       grid: { x: 1.55, y: 10.4 } },
 
     /*
-     * Queue Qualifier, the next service onto the new line.
+     * ---------------------------------------------------------------------
+     * THE NEW LINE: y = NEW_LINE, running +x, which is down-right on screen.
+     * ---------------------------------------------------------------------
      *
-     * It sits above the track — aside is set explicitly here rather than left to
-     * the automatic rule, which keys on a stop's dominant rail axis and would
-     * have put it up-LEFT: its rails back to Surveillance Filter are still long
-     * and northbound and outvote the short eastbound track it actually stands
-     * beside. Above means -y, which is also toward smaller gx + gy, so the
-     * building sits behind the line and the track stays in the foreground.
+     * This is the line the pipeline is being rebuilt onto, one service at a
+     * time, as each gets a building worth standing beside. Queue Qualifier,
+     * Surveillance Filter and Policy Evaluator are on it. Indexer and
+     * surveil.av5 are still back on the old y = 4 row and have not moved yet.
+     *
+     * Three rules hold for every stop on this line, and breaking any one of
+     * them is what made the old row unreadable:
+     *
+     *   1. Same y. The projection turns constant-y, increasing-x into a clean
+     *      straight run down-right, and the arch's exit curve already arrives
+     *      on that bearing, so the whole line is one unbroken track.
+     *   2. `aside` pinned to -y, never computed. Every one of these stations
+     *      still has long rails to services on the old rows, and the automatic
+     *      rule in render.js keys on a stop's DOMINANT rail axis — those long
+     *      northbound rails outvote the short line the station actually stands
+     *      beside, and it swings the building off to the -x side, out of step
+     *      with its own row. -y is also toward smaller gx + gy, so the building
+     *      sorts BEHIND the track: rails and trains stay in the foreground,
+     *      unobstructed, which is the whole point of stepping aside.
+     *   3. STEP apart, not one cell. These are large industrial works with
+     *      nameboards over them, not the small huts the old row carried. At
+     *      3.5 the buildings clear each other with room to read, and the line
+     *      still reads as one compact stretch rather than a thin scatter.
      */
-    { id: 'qualifier',  name: 'Queue Qualifier',     kind: 'sorting', tech: 'k8s',
-      grid: { x: 6.5, y: 13.8 }, aside: { x: 0, y: -0.72 } },
+    { id: 'qualifier',  name: 'Queue Qualifier',     kind: 'sorting',   tech: 'k8s',
+      grid: { x: 6.5,  y: 13.8 }, aside: { x: 0, y: -0.72 } },
+    { id: 'filter',     name: 'Surveillance Filter', kind: 'filtering', tech: 'k8s',
+      grid: { x: 10,   y: 13.8 }, aside: { x: 0, y: -0.72 } },
+    { id: 'evaluator',  name: 'Policy Evaluator',    kind: 'scanning',  tech: 'k8s',
+      grid: { x: 13.5, y: 13.8 }, aside: { x: 0, y: -0.72 } },
 
-    // --- the main line, y = 4, west to east ---------------------------------
+    // --- what is left of the old y = 4 row ----------------------------------
     { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
-    // Aside pinned rather than computed: with Queue Qualifier now far to the
-    // south, the automatic rule saw a dominant y axis and swung this building
-    // off to the -x side, out of step with the rest of the y = 4 row.
-    { id: 'filter',     name: 'Surveillance Filter', kind: 'station', tech: 'K8s',           grid: { x: 6, y: 4 },
+    /*
+     * Aside pinned for the same reason it is pinned on the new line, and this
+     * is the case that proves the rule: with the evaluator now far to the
+     * south, Indexer's dominant rail axis flipped from x to y and the automatic
+     * rule swung this building off to the -x side, out of step with the row it
+     * is still standing in. Pinning holds it where it has always been drawn.
+     */
+    { id: 'indexer',    name: 'Indexer',             kind: 'station', tech: 'K8s',           grid: { x: 10, y: 4 },
       aside: { x: 0, y: -0.72 } },
-    { id: 'evaluator',  name: 'Policy Evaluator',    kind: 'station', tech: 'K8s',           grid: { x: 8, y: 4 } },
-    { id: 'indexer',    name: 'Indexer',             kind: 'station', tech: 'K8s',           grid: { x: 10, y: 4 } },
     { id: 'surveil',    name: 'surveil.av5',         kind: 'yard',    tech: 'Elasticsearch', grid: { x: 12, y: 4 },
       role: 'Clearance Terminal' },
 
@@ -145,7 +170,11 @@
     // Each one hangs straight down on screen (dx === dy) from its own station,
     // so a spur can never be mistaken for a continuation of the journey.
     { id: 'ec-s3',      name: 'EC-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 3, y: 5 } },
-    { id: 'qualifier-dlt', name: '{topic}-dlt',      kind: 'siding',  tech: 'Kafka',         grid: { x: 7.5, y: 14.8 },
+    // Half a cell further down the spur than it used to sit, on the same
+    // dx === dy bearing so it still hangs straight down on screen: the works
+    // that replaced the old qualifier building stands on a much wider platform,
+    // and the siding's nameboard was landing on it.
+    { id: 'qualifier-dlt', name: '{topic}-dlt',      kind: 'siding',  tech: 'Kafka',         grid: { x: 8, y: 15.3 },
       role: 'Dead Letter Topic' },
     { id: 'review',     name: 'review.v1',           kind: 'yard',    tech: 'Elasticsearch', grid: { x: 11, y: 5 },
       role: 'Violation Depot' },
@@ -169,7 +198,11 @@
      * clearance. Every edge here is still on a clean axis: Policy Evaluator to
      * Quota Manager is dx = -dy, and the row itself runs along constant y.
      */
-    { id: 'quota',       name: 'Quota Manager',      kind: 'station',  tech: 'K8s',          grid: { x: 10, y: 2 } },
+    // Aside pinned for the same reason Indexer's is: the long rail up from the
+    // evaluator's new position outvotes this row's own short rails, and the
+    // automatic rule would step Quota Manager off to the -x side alone.
+    { id: 'quota',       name: 'Quota Manager',      kind: 'station',  tech: 'K8s',          grid: { x: 10, y: 2 },
+      aside: { x: 0, y: -0.72 } },
     { id: 'alerting',    name: 'Alerting',           kind: 'station',  tech: 'K8s',          grid: { x: 12, y: 2 } },
     { id: 'echo-engine', name: 'Echo Engine',        kind: 'station',  tech: 'K8s',          grid: { x: 14, y: 2 } },
 
@@ -226,21 +259,41 @@
       ctrl: { x: 1.55, y: 13.8 },
       topic: 'ec.surveillance-gateway.outbox.{tenant}.ingestedCommunication' },
     /*
-     * Out of Queue Qualifier heading east along its own platform, then a long
-     * curve north to Surveillance Filter. It has to be a curve: the station
-     * stepped ABOVE its track, and a straight rail to the filter — which is
-     * also north — would leave the platform and go through the building behind
-     * it. Of the control points that clear everything, this is the one that
-     * departs FORWARD along the track rather than reversing out.
+     * The new line itself, and it is now two plain straight rails.
+     *
+     * The curve these replaced was scaffolding: while Surveillance Filter was
+     * still up on the old y = 4 row, the rail out of Queue Qualifier had to
+     * leave along the platform and then swing hard north, and the control point
+     * existed purely to stop it reversing out of the station. With all three
+     * stops on the same y there is nothing left to steer around — same y,
+     * increasing x, which the projection draws as one clean run down-right.
      */
     { from: 'qualifier', to: 'filter',    transport: 'kafka',
-      ctrl: { x: 11, y: 13 },
       topic: 'ec.surveillance-qualifier.{tenant}.qualifications' },
     { from: 'filter',    to: 'evaluator', transport: 'kafka',
       topic: 'ec.surveillance-filter.{tenant}.evaluations' },
-    { from: 'evaluator', to: 'indexer',   transport: 'kafka',
+    /*
+     * Off the new line and back up to the old row, where Indexer still stands.
+     *
+     * The bow is not decoration. Straight, this rail passed through the middle
+     * of Conduct Audit Service — a building it has nothing to do with, which is
+     * the one thing this map is not allowed to draw. Bowed, it threads the gap
+     * between Reporting and Conduct Audit Service instead. The number was
+     * measured rather than guessed: the sign picks the gap side, and the
+     * magnitude is what it takes to clear both buildings by about a cell.
+     *
+     * It goes when Indexer moves onto the new line, which is the next stretch.
+     */
+    { from: 'evaluator', to: 'indexer',   transport: 'kafka', bow: -2.5,
       topic: 'ec.surveillance-policy-evaluator.{tenant}.surveilled' },
-    { from: 'evaluator', to: 'quota',     transport: 'kafka',
+    /*
+     * The same topic, the same problem, the other way round it. Straight, this
+     * one ran through review.v1 and then through Indexer; bowed east it goes
+     * outside the whole Search/Review block instead. Positive rather than
+     * negative because the western side is where the evaluator's rail to
+     * Indexer already is, and two long rails sharing a corridor read as one.
+     */
+    { from: 'evaluator', to: 'quota',     transport: 'kafka', bow: 2.6,
       topic: 'ec.surveillance-policy-evaluator.{tenant}.surveilled' },
     { from: 'indexer',   to: 'surveil',   transport: 'elastic',
       topic: 'index -> surveil.av5' },
@@ -262,7 +315,10 @@
     { from: 'qualifier', to: 'qualifier-dlt', transport: 'dlt',
       topic: '{topic}-dlt' },
 
-    { from: 'filter',        to: 'not-qualified', transport: 'kafka',
+    // Bowed just enough to pass west of Review Service rather than through it,
+    // now that the filter is down on the new line and this rail is a long climb
+    // across the estate instead of a short hop.
+    { from: 'filter',        to: 'not-qualified', transport: 'kafka', bow: -1.0,
       topic: 'ec.surveillance-filter.{tenant}.not-qualified' },
     { from: 'not-qualified', to: 'audit',         transport: 'kafka',
       topic: 'ec.centralized.{tenant}.audit' },
@@ -284,14 +340,26 @@
     { from: 'manual-run',     to: 'gateway',        transport: 'kafka', bow: -0.8,
       topic: 'ec.surveillance-manual-run.{tenant}.ingestion' },
     /*
-     * The manual-run bypass. Drawn with a bow because it genuinely is one: a
-     * manual-run communication is qualified before it ever reaches Gateway, so
-     * it skips Queue Qualifier entirely and goes from Gateway's outbox straight
-     * to Surveillance Filter. Straight, this rail ran exactly through the
-     * middle of the qualifier, which said the opposite of what it means. Bowed,
-     * it visibly goes around the station it bypasses.
+     * The manual-run bypass, and it genuinely is one: a manual-run
+     * communication is qualified before it ever reaches Gateway, so it skips
+     * Queue Qualifier entirely and runs from Gateway's outbox straight to
+     * Surveillance Filter. Straight, it goes through the middle of the station
+     * it bypasses, which says the opposite of what it means.
+     *
+     * Now that the qualifier and the filter are both on the new line, the bow
+     * that used to carry it round is the wrong tool — a screen-space bow between
+     * two stops on the same line just bulges symmetrically. A control point puts
+     * the curve where it has to be: it climbs clear of the line, passes ABOVE
+     * and behind Queue Qualifier with about a cell of daylight, and comes back
+     * down onto the line to the left of Surveillance Filter, so it arrives at
+     * the track rather than clipping the corner of the building.
+     *
+     * Above and not below on purpose. Below the line is the foreground, and it
+     * is already carrying the retry loop and the dead letter siding; a bypass
+     * threaded through those would read as part of the failure path.
      */
-    { from: 'gateway',        to: 'filter',         transport: 'cdc', bow: 1.15,
+    { from: 'gateway',        to: 'filter',         transport: 'cdc',
+      ctrl: { x: 5.5, y: 12.2 },
       topic: 'ec.surveillance-gateway.outbox.{tenant}.qualifiedCommunication' },
 
     { from: 'config-curator', layer: 'config', to: 'qualifier',      transport: 'kafka',
@@ -330,7 +398,8 @@
     { from: 'echo-engine',    to: 'alerting',       transport: 'kafka',
       topic: 'ec.echo-engine.{tenant}.echoAction' },
 
-    { from: 'evaluator',      to: 'cognition',      transport: 'kafka',
+    // Bowed off Reporting, which the straight run now crosses on its way up.
+    { from: 'evaluator',      to: 'cognition',      transport: 'kafka', bow: -1.2,
       topic: 'cognition.config.{tenant}.kafkaTopic (per-tenant)' },
     { from: 'evaluator',      to: 'audit', layer: 'audit',          transport: 'kafka',
       topic: 'ec.centralized.{tenant}.audit' },
