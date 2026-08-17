@@ -330,12 +330,13 @@
       grid: { x: 4, y: 0 } },
 
     /*
-     * UI Portal (k8s). Swapped with Indexer: now at {x:10, y:4} on the same y = 4
-     * structural axis. Three tiles to the right of the Indexer, increasing x at
-     * constant y appears down-right on screen. gx + gy = 14. Sourced to knowledge/.
+     * UI Portal (k8s). Moved 5 tiles top-left (constant y, dx = −5) from {x:10,
+     * y:4} to {x:5, y:4}. Top-left is the −x direction on screen. This places it
+     * between the Indexer cluster and the Archive approach track, giving the
+     * portal wires shorter runs to Indexer and Gateway. Sourced to knowledge/.
      */
     { id: 'ui-portal',      name: 'UI Portal',         kind: 'ui-portal',     tech: 'k8s',
-      grid: { x: 10, y: 4 } },
+      grid: { x: 5, y: 4 } },
   ];
 
   // transport: kafka (a track) | cdc (outbox -> Debezium -> a track) | s3 (an IO spur)

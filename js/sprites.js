@@ -2372,34 +2372,60 @@ var Sprites = (function () {
   /*
    * UI Portal (k8s): the user-facing gateway into the estate.
    *
-   * A vertical hoarding billboard is mounted on the near (south) roof edge and
-   * rises straight up in screen-space. Its base follows the iso-slanted near
-   * roof edge; the sides go straight up so it reads as a flat vertical display
-   * facing the viewer. The screen shows scrolling system-log feeds and a neon
-   * waveform bar chart, both clipped to the panel quad.
+   * 25% larger than the original. Mustard Yellow sides. Double entrance doors
+   * and glazing bays on both visible faces. The billboard display is centred on
+   * the roof rather than mounted on the near edge — angled struts from the far
+   * half of the roof support the panel base at the roof mid-plane (v = 0.5).
    */
   function uiPortalSprite(ctx, canvas, stop, state, z, t) {
     var gx  = stop.grid.x, gy = stop.grid.y;
     var now  = t || 0;
-    var BASE = 4, H = 22, ROOF = BASE + H;
+    var BASE = 5, H = 28, ROOF = BASE + H;
+    var HW = 0.47, HH = 0.35;   // body (25% larger than original 0.38 × 0.28)
     var accent = state === 'current' ? '#f0a132' : '#4a8fa8';
+    var wall   = state === 'current' ? '#dde3e8' : '#c8b060';   // Mustard Yellow
+    var wallLo = state === 'current' ? '#bcc5cc' : '#b09848';   // darker shade
 
     // ── Shell ────────────────────────────────────────────────────────────────
-    I.box(ctx, canvas, gx, gy, 0.48, 0.38, BASE, PALETTE.platform);
-    I.box(ctx, canvas, gx, gy, 0.38, 0.28, H,    PALETTE.wall, BASE);
-    I.box(ctx, canvas, gx, gy, 0.42, 0.32, 4,    '#b8b0a0', ROOF);
+    I.box(ctx, canvas, gx, gy, 0.60, 0.47, BASE, PALETTE.platform);  // apron
+    I.box(ctx, canvas, gx, gy, HW,   HH,   H,    wall, BASE);         // body
 
-    var rc   = I.corners(gx, gy, 0.38, 0.28, canvas);
+    // ── Face detailing — windows and entrance doors ───────────────────────
+    var f = yardFace(canvas, gx, gy, HW, HH, BASE, H);
+
+    // Bay face (+y wall, wider): double entrance doors with transom + side windows.
+    faceQuad(ctx, f.bay, 0.26, 0.74, 0.01, 0.52, wallLo);          // door frame sill
+    faceQuad(ctx, f.bay, 0.29, 0.49, 0.03, 0.50, '#141a1f');       // left door leaf
+    faceQuad(ctx, f.bay, 0.51, 0.71, 0.03, 0.50, '#141a1f');       // right door leaf
+    faceQuad(ctx, f.bay, 0.30, 0.70, 0.51, 0.66, WORKS.glass);     // transom window
+    faceQuad(ctx, f.bay, 0.04, 0.21, 0.36, 0.78, WORKS.glass);     // left side window
+    faceQuad(ctx, f.bay, 0.07, 0.18, 0.40, 0.75, WORKS.pane);      // left pane
+    faceQuad(ctx, f.bay, 0.79, 0.96, 0.36, 0.78, WORKS.glass);     // right side window
+    faceQuad(ctx, f.bay, 0.82, 0.93, 0.40, 0.75, WORKS.pane);      // right pane
+
+    // Flank face (+x wall, narrower): two glazing bays separated by a pillar.
+    faceQuad(ctx, f.flank, 0.05, 0.44, 0.36, 0.82, WORKS.glass);   // left glazing bay
+    faceQuad(ctx, f.flank, 0.09, 0.21, 0.40, 0.79, WORKS.pane);
+    faceQuad(ctx, f.flank, 0.24, 0.36, 0.40, 0.79, WORKS.pane);
+    faceQuad(ctx, f.flank, 0.56, 0.95, 0.36, 0.82, WORKS.glass);   // right glazing bay
+    faceQuad(ctx, f.flank, 0.60, 0.72, 0.40, 0.79, WORKS.pane);
+    faceQuad(ctx, f.flank, 0.75, 0.87, 0.40, 0.79, WORKS.pane);
+    faceQuad(ctx, f.flank, 0.88, 0.93, 0.40, 0.79, WORKS.pane);
+
+    // ── Roof parapet ─────────────────────────────────────────────────────────
+    I.box(ctx, canvas, gx, gy, 0.52, 0.40, 5, '#b8b0a0', ROOF);
+
+    var rc   = I.corners(gx, gy, HW, HH, canvas);
     var roof = { n: I.up(rc.n, ROOF), e: I.up(rc.e, ROOF),
                  s: I.up(rc.s, ROOF), w: I.up(rc.w, ROOF) };
 
-    // ── Vertical hoarding screen ─────────────────────────────────────────────
-    // Base sits on the near (v=1) roof edge; panel rises straight up in screen-
-    // space. sp(s, tv): s=0..1 left-to-right along the base, tv=0..1 bottom-to-top.
+    // ── Display panel, centred on the roof ──────────────────────────────────
+    // Base anchored at the roof mid-plane (v = 0.5). Panel rises straight up
+    // in screen-space. Angled struts from the far side (v ≈ 0.15) brace it.
     var M        = 0.08;
-    var SCREEN_H = 44;
-    var bL = topPoint(roof, M,   1.0);
-    var bR = topPoint(roof, 1-M, 1.0);
+    var SCREEN_H = 55;   // 44 × 1.25
+    var bL = topPoint(roof, M,   0.5);
+    var bR = topPoint(roof, 1-M, 0.5);
     function sp(s, tv) {
       return { x: bL.x + (bR.x - bL.x) * s,
                y: bL.y + (bR.y - bL.y) * s - SCREEN_H * z * tv };
@@ -2407,11 +2433,11 @@ var Sprites = (function () {
 
     var pBL = sp(0, 0), pBR = sp(1, 0), pTR = sp(1, 1), pTL = sp(0, 1);
 
-    // Mounting struts from roof to panel base.
+    // Angled struts from far-side roof anchors to the panel base.
     ctx.strokeStyle = I.shade(PALETTE.steel, -0.18);
     ctx.lineWidth   = Math.max(0.9, 1.8 * z);
     [0.28, 0.72].forEach(function (s) {
-      var rp = topPoint(roof, M + s * (1 - 2 * M), 0.82);
+      var rp = topPoint(roof, M + s * (1 - 2 * M), 0.15);
       var bp = sp(s, 0);
       ctx.beginPath(); ctx.moveTo(rp.x, rp.y); ctx.lineTo(bp.x, bp.y); ctx.stroke();
     });
@@ -2477,9 +2503,9 @@ var Sprites = (function () {
     ctx.closePath();
     ctx.stroke();
 
-    if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.66, '#f0a132', z);
+    if (state === 'current') haloRing(ctx, canvas, gx, gy, 0.82, '#f0a132', z);
     var top = I.up(I.toScreen(gx, gy, canvas), BASE);
-    nameboard(ctx, top.x, top.y - 48 * z, stop.name, stop.tech, z);
+    nameboard(ctx, top.x, top.y - 56 * z, stop.name, stop.tech, z);
   }
 
   /*

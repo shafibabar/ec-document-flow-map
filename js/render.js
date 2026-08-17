@@ -604,7 +604,7 @@ var Render = (function () {
     vault:         26,
     siding:        12,
     'audit-vault': 54,    // AUDIT_BASE + AUDIT_H + deck + tower = 3 + 38 + 4 + 24 + 2.5 ≈ LST taller at 81
-    'ui-portal':   30,    // 4 + 22 + 4
+    'ui-portal':   38,    // 5 + 28 + 5 (25% larger)
     'data-indexer':48,    // B(2) + DI_H(34) + deck(4) + portal ribs
     'es-silo':     42,    // 4 + 10 + 3 + silo 22 + cap 3
     'config-engine':34    // 4 + 26 + 4
@@ -999,8 +999,9 @@ var Render = (function () {
      * the Gateway, Indexer, Config Curator, Review Service, and Reporting LSTs.
      * The base cables are always visible. During the broadcast sequence, bolts
      * travel outward from the Portal simultaneously on all five wires, hold for
-     * 1 s, then all five targets fire return bolts back. No support poles —
-     * the fan of wires is too dense for poles to read cleanly.
+     * 1 s, then all five targets fire return bolts back. Support poles are
+     * placed every 3 grid units per the established rule (Portal moved to x=5,
+     * so some runs are long enough to warrant 1–4 poles).
      */
     var PORTAL_WIRE_STOPS = ['gateway', 'indexer', 'config-curator', 'review-service', 'reporting'];
     var uiPSt = stopById(flow, 'ui-portal');
@@ -1030,8 +1031,25 @@ var Render = (function () {
         var pwLstH = (BUILD_H[pwStop.kind] || 36) * 1.5 * z;
         var pwFoot = Iso.toScreen(pwPos.x + pwLoff, pwPos.y - pwLoff, canvas);
         var pwApex = { x: pwFoot.x, y: pwFoot.y - pwLstH };
+
+        var pmx2      = (upApex.x + pwApex.x) / 2;
+        var pspan2    = Math.hypot(pwApex.x - upApex.x, pwApex.y - upApex.y);
+        var psag2     = Math.max(6 * z, Math.min(36 * z, pspan2 * 0.05));
+        var pmy2      = Math.max(upApex.y, pwApex.y) + psag2;
+        var gridDist2 = Math.hypot(uiPSt.grid.x - pwPos.x, uiPSt.grid.y - pwPos.y);
+        var nPoles2   = Math.max(0, Math.floor(gridDist2 / 3) - 1);
+        var polePts2  = [];
+        for (var pi2 = 1; pi2 <= nPoles2; pi2++) {
+          var pt2 = pi2 / (nPoles2 + 1);
+          var pu2 = 1 - pt2;
+          var pbx2 = pu2*pu2*upApex.x + 2*pu2*pt2*pmx2 + pt2*pt2*pwApex.x;
+          var pby2 = pu2*pu2*upApex.y + 2*pu2*pt2*pmy2 + pt2*pt2*pwApex.y;
+          polePts2.push({ x: pbx2, y: pby2 });
+          Sprites.supportPole(ctx, pbx2, pby2, z, pActiveE, pActiveZap, state.now);
+        }
+
         Sprites.transmissionWire(ctx, upApex.x, upApex.y, pwApex.x, pwApex.y,
-                                 pActiveE, pActiveZap, z, state.now, []);
+                                 pActiveE, pActiveZap, z, state.now, polePts2);
       });
     }
   }
