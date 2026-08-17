@@ -52,9 +52,9 @@
    */
   var STOPS = [
     /*
-     * The Archive, at (0,7): three cells from EA-S3 along a single grid axis, so
-     * EA-S3 sits up and to the right of it and the conveyor between them runs
-     * at 90 degrees to both buildings' walls.
+     * The Archive, at (0,7): EA-S3 sits two cells to the left (dx = −2, dy = 0),
+     * on the same-y axis (up-left on screen). The conveyor between them runs
+     * squarely out of the Archive's left wall and into EA-S3's +x annex.
      *
      * That single-axis constraint is the whole point, and it is easy to get
      * wrong. A building's walls lie along the grid axes, so a wall's normal is
@@ -62,10 +62,6 @@
      * leaves through the corner of the building at 45 degrees to either wall,
      * which is exactly what looked awkward before. Only a pure-axis run comes
      * squarely out of a wall.
-     *
-     * (-x would have worked geometrically too, but it puts the Archive on the
-     * y = 4 row, which is the pipeline's own line, and the Archive must not
-     * read as a stop on it.)
      *
      * PROVENANCE, stated plainly because this is the one edge on the map that
      * does not come from knowledge/:
@@ -117,6 +113,14 @@
       grid: { x: 1.55, y: 10.4 } },
 
     /*
+     * Logistics spawn: the point on the archive track where the scenery flatbed
+     * appears each cycle. At x = ARCHIVE_TRACK = 1.55, above the Archive, so
+     * the approach runs as one clean vertical — same x, increasing y. Not an
+     * estate fact; not in knowledge/. It is the railway's own traffic.
+     */
+    { id: 'logistics-origin', kind: 'edge', grid: { x: 1.55, y: 1.5 } },
+
+    /*
      * ---------------------------------------------------------------------
      * THE NEW LINE: y = NEW_LINE, running +x, which is down-right on screen.
      * ---------------------------------------------------------------------
@@ -152,73 +156,187 @@
     { id: 'evaluator',  name: 'Policy Evaluator',    kind: 'scanning',  tech: 'k8s',
       grid: { x: 13.5, y: 13.8 }, aside: { x: 0, y: -0.72 } },
 
-    // --- what is left of the old y = 4 row ----------------------------------
-    { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 0, y: 4 } },
     /*
-     * Aside pinned for the same reason it is pinned on the new line, and this
-     * is the case that proves the rule: with the evaluator now far to the
-     * south, Indexer's dominant rail axis flipped from x to y and the automatic
-     * rule swung this building off to the -x side, out of step with the row it
-     * is still standing in. Pinning holds it where it has always been drawn.
-     */
-    { id: 'indexer',    name: 'Indexer',             kind: 'station', tech: 'K8s',           grid: { x: 10, y: 4 },
-      aside: { x: 0, y: -0.72 } },
-    { id: 'surveil',    name: 'surveil.av5',         kind: 'yard',    tech: 'Elasticsearch', grid: { x: 12, y: 4 },
-      role: 'Clearance Terminal' },
-
-    // --- below the line: storage, sidings, dead ends -------------------------
-    // Each one hangs straight down on screen (dx === dy) from its own station,
-    // so a spur can never be mistaken for a continuation of the journey.
-    { id: 'ec-s3',      name: 'EC-S3',               kind: 'depot',   tech: 'S3',            grid: { x: 3, y: 5 } },
-    // Half a cell further down the spur than it used to sit, on the same
-    // dx === dy bearing so it still hangs straight down on screen: the works
-    // that replaced the old qualifier building stands on a much wider platform,
-    // and the siding's nameboard was landing on it.
-    { id: 'qualifier-dlt', name: '{topic}-dlt',      kind: 'siding',  tech: 'Kafka',         grid: { x: 8, y: 15.3 },
-      role: 'Dead Letter Topic' },
-    { id: 'review',     name: 'review.v1',           kind: 'yard',    tech: 'Elasticsearch', grid: { x: 11, y: 5 },
-      role: 'Violation Depot' },
-
-    // --- above the line: the audit plane ------------------------------------
-    // The not-qualified walk climbs straight up on screen from the filter —
-    // filter -> .not-qualified -> Centralized Audit are each dx === dy === -1 —
-    // and the Mongo collection peels off due right (dx === -dy).
-    { id: 'not-qualified', name: '.not-qualified',   kind: 'terminus', tech: 'Kafka',        grid: { x: 4, y: 2 },
-      role: 'End of the surveillance line' },
-    { id: 'audit',       name: 'Centralized Audit',  kind: 'station',  tech: 'K8s',          grid: { x: 3, y: 1 } },
-    { id: 'audit-store', name: 'ec-audit-events',    kind: 'depot',    tech: 'MongoDB',      grid: { x: 4, y: 0 } },
-
-    /*
-     * The y = 2 row: everything fed from the main line's later stops.
+     * ---------------------------------------------------------------------
+     * THE BEND, AND THE SECOND LEG: x = 17.5, running -y, up-right on screen.
+     * ---------------------------------------------------------------------
      *
-     * Two cells above the main line, not one. One was enough while buildings
-     * sat on their own cells, but a station that steps aside from its track
-     * reaches 0.72 back plus its own half-depth, which put the main line's
-     * buildings straight on top of this row's rails. Two cells leaves 0.82 of
-     * clearance. Every edge here is still on a clean axis: Policy Evaluator to
-     * Quota Manager is dx = -dy, and the row itself runs along constant y.
+     * The line does not run off the bottom-right corner for ever. After the
+     * evaluator it turns through 90 degrees and climbs back up the screen, so
+     * the estate reads as a circuit rather than a diagonal stripe — which is
+     * also what puts the far end of the pipeline back beside its beginning.
+     *
+     * The turn is one quadratic whose control point sits where the two tangent
+     * lines meet, at (17.5, 13.8): the corner of the L. That makes the rail
+     * leave the evaluator dead along y = 13.8 and arrive travelling dead along
+     * x = 17.5, with no kink at either end. The curvature is all in the middle
+     * — by three quarters of the way round it is within 0.25 of the x = 17.5
+     * line — so the bend visibly COMPLETES and there is a straight run before
+     * the first station on the new leg, which is what the brief asks for.
+     *
+     * `aside` flips to -x on this leg, and for exactly the same reason it was
+     * -y on the first: -x is toward smaller gx + gy when the track runs along
+     * y, so the building sorts behind its own rails. Everything about the
+     * arrangement rotates with the track, including the platform and the
+     * building footprint — see the `axis` field, which sprites.js reads.
      */
-    // Aside pinned for the same reason Indexer's is: the long rail up from the
-    // evaluator's new position outvotes this row's own short rails, and the
-    // automatic rule would step Quota Manager off to the -x side alone.
-    { id: 'quota',       name: 'Quota Manager',      kind: 'station',  tech: 'K8s',          grid: { x: 10, y: 2 },
-      aside: { x: 0, y: -0.72 } },
-    { id: 'alerting',    name: 'Alerting',           kind: 'station',  tech: 'K8s',          grid: { x: 12, y: 2 } },
-    { id: 'echo-engine', name: 'Echo Engine',        kind: 'station',  tech: 'K8s',          grid: { x: 14, y: 2 } },
+    { id: 'quota',      name: 'Quota Manager',       kind: 'metering',  tech: 'k8s',
+      grid: { x: 17.5, y: 9.2 }, aside: { x: -0.72, y: 0 }, axis: 'y' },
 
-    // --- upstream and control ------------------------------------------------
-    { id: 'manual-run',     name: 'Manual Run',      kind: 'station',  tech: 'K8s',          grid: { x: 0, y: 2 } },
-    { id: 'config-curator', name: 'Config Curator',  kind: 'station',  tech: 'K8s',          grid: { x: 2, y: 2 } },
-    // Cognition sits below the line rather than above it with the other
-    // non-pipeline services. Above the evaluator, on any clean axis, its spur
-    // crossed the .not-qualified -> Quota Manager rail; here it runs due left on
-    // screen from the evaluator and crosses nothing.
-    { id: 'cognition',      name: 'Cognition Analytics', kind: 'external', tech: 'external', grid: { x: 7, y: 5 } },
+    /*
+     * Alerting is not a station on this line — it is the railway yard the line
+     * runs INTO. No platform, no stepping aside, no halt: the track goes
+     * straight through the front bay doors and the cart is swallowed by the
+     * building, which is why its apron is zero and its aside is left alone.
+     */
+    { id: 'alerting',   name: 'Alerting',            kind: 'railyard',  tech: 'k8s',
+      grid: { x: 17.5, y: 5.2 }, axis: 'y' },
 
-    // --- the y = 7 row: the reporting and review subdomain -------------------
-    { id: 'review-service', name: 'Review Service',        kind: 'station', tech: 'K8s',     grid: { x: 7, y: 7 } },
-    { id: 'reporting',      name: 'Reporting',             kind: 'station', tech: 'K8s',     grid: { x: 9, y: 7 } },
-    { id: 'conduct-audit',  name: 'Conduct Audit Service', kind: 'station', tech: 'K8s',     grid: { x: 11, y: 7 } }
+    /*
+     * The yard throat. Three roads leave the back of the shed on the same
+     * bearing the line came in on, run straight for a length, and then the two
+     * outer ones swing away and straighten again to reach their own terminal.
+     *
+     * These are `edge` stops: no building, no board, nothing drawn. They exist
+     * because a rail's ends are stops, and an S-bend that leaves and arrives on
+     * the SAME bearing cannot be one quadratic — it takes two, meeting where
+     * the curve is momentarily square to the line. Hence the middle node on
+     * each side, and hence the tangents matching across it exactly.
+     */
+    { id: 'yard-l0', kind: 'edge', grid: { x: 16.60, y: 4.10 } },
+    { id: 'yard-l1', kind: 'edge', grid: { x: 16.60, y: 2.80 } },
+    { id: 'yard-l2', kind: 'edge', grid: { x: 15.775, y: 2.00 } },
+    { id: 'yard-l3', kind: 'edge', grid: { x: 14.95, y: 1.20 } },
+    { id: 'yard-r0', kind: 'edge', grid: { x: 18.40, y: 4.10 } },
+    { id: 'yard-r1', kind: 'edge', grid: { x: 18.40, y: 2.80 } },
+    { id: 'yard-r2', kind: 'edge', grid: { x: 19.225, y: 2.00 } },
+    { id: 'yard-r3', kind: 'edge', grid: { x: 20.05, y: 1.20 } },
+
+    /*
+     * The three terminal yards at the head of the three roads. Each one takes
+     * its road in through its own front bay, so a cart that reaches the end of
+     * the map goes inside a building rather than stopping dead on open track.
+     * `kit` picks the roof machinery; sprites.js does not know what an Echo
+     * Engine is, only that this one wears the acoustic kit.
+     */
+    { id: 'review-service', name: 'Review Service', kind: 'terminal', tech: 'k8s',
+      grid: { x: 14.95, y: -0.4 }, axis: 'y', kit: 'inspect' },
+    { id: 'echo-engine',    name: 'Echo Engine',    kind: 'terminal', tech: 'k8s',
+      grid: { x: 17.50, y: -0.4 }, axis: 'y', kit: 'acoustic' },
+    { id: 'reporting',      name: 'Reporting',      kind: 'terminal', tech: 'k8s',
+      grid: { x: 20.05, y: -0.4 }, axis: 'y', kit: 'ticker' },
+
+    /*
+     * Cognition, off the running lines entirely.
+     *
+     * It sits up-right of the evaluator, in the open ground the bend encloses,
+     * and that position is chosen for one property above all others: every
+     * point of it is at a LOWER gx + gy than any rail near it, so it is painted
+     * before them and physically cannot obscure a track, a platform or a cart.
+     * Anywhere on the far side of the running lines would have put a building
+     * in front of the railway, which is the one thing the brief rules out.
+     *
+     * It is also the only bearing on which the carousel to the evaluator
+     * crosses no track at all: due -y from the evaluator, parallel to the
+     * second leg and well inside it.
+     */
+    { id: 'cognition',  name: 'Cognition',           kind: 'cognition', tech: 'k8s',
+      grid: { x: 13.5, y: 10.2 } },
+
+    { id: 'ea-s3',      name: 'EA-S3',               kind: 'depot',   tech: 'S3',
+      orientation: '+x', grid: { x: -2, y: 7 } },
+
+    /*
+     * EC-S3 (S3 bucket). Relocated four tiles top-left of the Gateway along the
+     * same-y axis (dx = −4, dy = 0), which is up-left on screen. The belt from
+     * Gateway arrives from the +x direction, so the building is oriented to open
+     * its annex toward Gateway (orientation: '+x'). The belt runs along gy = 10.4
+     * — the same y as the Gateway arch — giving a clean horizontal isometric run
+     * with no kink at either end.
+     */
+    { id: 'ec-s3',      name: 'EC-S3',               kind: 'depot',   tech: 'S3',
+      orientation: '+x', grid: { x: -2.45, y: 10.4 } },
+
+
+    /*
+     * The y = 2 row is what is left of the old jumbled configuration once
+     * Quota Manager, Alerting and Echo Engine moved onto the second leg. They
+     * were MOVED, not copied — there is deliberately no building of any of them
+     * left standing here, because a stale duplicate of a service is worse than
+     * a gap on a map whose whole job is to be believed.
+     */
+
+    /*
+     * ---------------------------------------------------------------------------
+     * New infrastructure: Config Curator, Centralized Audit, Indexer, the two
+     * ES silos, and UI Portal.
+     *
+     * None of these stand on the railway. They connect via conveyor belts,
+     * carousel and road links. Grid positions are chosen so every connection
+     * runs along one of the four clean isometric axes, and no footprint lands
+     * under a track it has nothing to do with.
+     * ---------------------------------------------------------------------------
+     */
+
+    /*
+     * Config Curator (k8s). Moved to {x:10, y:0} — 4 tiles top-right (constant x,
+     * dy = −4) of the UI Portal at {x:10, y:4}. Configuration paths radiate to
+     * Gateway, Queue Qualifier, Surveillance Filter, Policy Evaluator, Quota
+     * Manager, and UI Portal. Sourced to knowledge/.
+     */
+    { id: 'config-curator', name: 'Config Curator',    kind: 'config-engine', tech: 'k8s',
+      grid: { x: 10, y: 0 } },
+
+    /*
+     * Centralized Audit (MongoDB). One row below Config Curator, three cells
+     * east, in open ground above the Indexer and below the control plane. That
+     * position gives it clear sight-lines to every pipeline station and to the
+     * Indexer. Sourced to knowledge/.
+     */
+    /*
+     * Repositioned two tiles bottom-right of UI Portal ({x:6,y:7} → {x:8,y:9})
+     * to shorten all seven transmission wire paths and reduce rendering overhead.
+     */
+    { id: 'audit',          name: 'Centralized Audit', kind: 'audit-vault',   tech: 'MongoDB',
+      grid: { x: 8, y: 9 } },
+
+    /*
+     * Indexer (k8s). Swapped with UI Portal: now at {x:7, y:4}, rotated 90° so
+     * the entry doors face the +x (right) side of the isometric viewport. The two
+     * ES silos hang from its left (−x/−y) wall, fanning symmetrically:
+     *
+     *   Surveilled Index: delta (−2, −3) — length √13. Screen vector (+1, −5).
+     *   Review Index:     delta (−3, −2) — length √13. Screen vector (−1, −5).
+     *
+     * Mirror-image screen projections at equal lengths give the visual impression
+     * of parallel diagonal conveyors. Sourced to knowledge/.
+     */
+    { id: 'indexer',        name: 'Indexer',           kind: 'data-indexer',  tech: 'k8s',
+      orientation: '90', grid: { x: 7, y: 4 } },
+
+    /*
+     * Surveilled Index (ES). Belt exit: dx = 0, dy = −3 from Indexer — same-x
+     * axis, straight up-right on screen. Length = 3. Sits directly above the
+     * Indexer on the same x-column. Fast and densely packed.
+     */
+    { id: 'surveil',        name: 'Surveilled Index',  kind: 'es-silo',       tech: 'ES',
+      grid: { x: 7, y: 1 } },
+
+    /*
+     * Review Index (ES). Belt exit: dx = −3, dy = 0 from Indexer — same-y axis,
+     * straight up-left on screen. Length = 3. Sits on the same y-row as the
+     * Indexer, three tiles to the left. Slow and sparsely packed.
+     */
+    { id: 'review',         name: 'Review Index',      kind: 'es-silo',       tech: 'ES',
+      grid: { x: 4, y: 4 } },
+
+    /*
+     * UI Portal (k8s). Swapped with Indexer: now at {x:10, y:4} on the same y = 4
+     * structural axis. Three tiles to the right of the Indexer, increasing x at
+     * constant y appears down-right on screen. gx + gy = 14. Sourced to knowledge/.
+     */
+    { id: 'ui-portal',      name: 'UI Portal',         kind: 'ui-portal',     tech: 'k8s',
+      grid: { x: 10, y: 4 } },
   ];
 
   // transport: kafka (a track) | cdc (outbox -> Debezium -> a track) | s3 (an IO spur)
@@ -238,23 +356,15 @@
       src: 'repo owner (not in knowledge/)' },
 
     /*
-     * Into the arch, and out round the corner.
-     *
-     * Both carry a `ctrl` point, which makes them quadratic curves whose
-     * tangents are chosen rather than incidental: each one arrives at or leaves
-     * Gateway travelling along x = 1.55, the axis the archway's piers straddle,
-     * so the train actually runs between them instead of cutting across at an
-     * angle. The control point is simply where the two tangent lines meet.
-     *
-     * The second is the 90-degree turn: it leaves the arch heading down-left on
-     * +y and comes out of the curve heading down-right on +x, which is the
-     * bearing Queue Qualifier stands on.
+     * Gateway → EC-S3. A mechanical conveyor belt, not a road. The belt runs
+     * along the gy = 10.4 axis (same y as both structures, decreasing x = up-left
+     * on screen). It is normally slow-moving infra; during the Gateway cargo
+     * lifecycle the engine emits six distinct coloured parcels on top of it.
+     * Sourced to knowledge/ (Gateway uploads miniIndexable.json to EC-S3).
      */
-    { from: 'ea-s3',     to: 'gateway',   transport: 'kafka',
-      ctrl: { x: 1.55, y: 4 },
-      topic: 'supBulkIndexingTopic_k8s' },
-    { from: 'gateway',   to: 'ec-s3',     transport: 's3',
-      topic: 'miniIndexable.json upload' },
+    { from: 'gateway',   to: 'ec-s3',     transport: 'belt',
+      topic: 'miniIndexable.json upload',
+      beltSpeed: 0.4, beltDensity: 0.6 },
     { from: 'gateway',   to: 'qualifier', transport: 'cdc',
       ctrl: { x: 1.55, y: 13.8 },
       topic: 'ec.surveillance-gateway.outbox.{tenant}.ingestedCommunication' },
@@ -273,33 +383,14 @@
     { from: 'filter',    to: 'evaluator', transport: 'kafka',
       topic: 'ec.surveillance-filter.{tenant}.evaluations' },
     /*
-     * Off the new line and back up to the old row, where Indexer still stands.
-     *
-     * The bow is not decoration. Straight, this rail passed through the middle
-     * of Conduct Audit Service — a building it has nothing to do with, which is
-     * the one thing this map is not allowed to draw. Bowed, it threads the gap
-     * between Reporting and Conduct Audit Service instead. The number was
-     * measured rather than guessed: the sign picks the gap side, and the
-     * magnitude is what it takes to clear both buildings by about a cell.
-     *
-     * It goes when Indexer moves onto the new line, which is the next stretch.
+     * The 90-degree bend. Control point at the corner of the L, so the rail
+     * leaves the evaluator along the first leg and arrives at Quota Manager
+     * along the second with no kink at either end. See the note on the quota
+     * stop for why the curvature sits where it does.
      */
-    { from: 'evaluator', to: 'indexer',   transport: 'kafka', bow: -2.5,
+    { from: 'evaluator', to: 'quota',     transport: 'kafka',
+      ctrl: { x: 17.5, y: 13.8 },
       topic: 'ec.surveillance-policy-evaluator.{tenant}.surveilled' },
-    /*
-     * The same topic, the same problem, the other way round it. Straight, this
-     * one ran through review.v1 and then through Indexer; bowed east it goes
-     * outside the whole Search/Review block instead. Positive rather than
-     * negative because the western side is where the evaluator's rail to
-     * Indexer already is, and two long rails sharing a corridor read as one.
-     */
-    { from: 'evaluator', to: 'quota',     transport: 'kafka', bow: 2.6,
-      topic: 'ec.surveillance-policy-evaluator.{tenant}.surveilled' },
-    { from: 'indexer',   to: 'surveil',   transport: 'elastic',
-      topic: 'index -> surveil.av5' },
-    { from: 'indexer',   to: 'review',    transport: 'elastic',
-      topic: 'index -> review.v1' },
-
     /*
      * Retry and DLT, on Queue Qualifier's ingestion path. `from` and `to` are
      * the same stop on purpose — a retry is a loop siding: the message goes
@@ -310,20 +401,6 @@
      * not a static template in application.yaml, so the documents can only name
      * the suffix. That is a real gap in the estate's own record, not a gap here.
      */
-    { from: 'qualifier', to: 'qualifier',     transport: 'retry',
-      topic: '{topic}-retry-0 / {topic}-retry-1' },
-    { from: 'qualifier', to: 'qualifier-dlt', transport: 'dlt',
-      topic: '{topic}-dlt' },
-
-    // Bowed just enough to pass west of Review Service rather than through it,
-    // now that the filter is down on the new line and this rail is a long climb
-    // across the estate instead of a short hop.
-    { from: 'filter',        to: 'not-qualified', transport: 'kafka', bow: -1.0,
-      topic: 'ec.surveillance-filter.{tenant}.not-qualified' },
-    { from: 'not-qualified', to: 'audit',         transport: 'kafka',
-      topic: 'ec.centralized.{tenant}.audit' },
-    { from: 'audit',         to: 'audit-store',   transport: 'mongo',
-      topic: 'write -> ec-audit-events' },
 
     /*
      * The rest of the estate's edges. Every one of these was read from both
@@ -335,62 +412,6 @@
      * topic, because the service writes an outbox row and Debezium publishes
      * it. That absence is the pattern, not a gap.
      */
-    // Bowed away from EA-S3, which the straight run clipped by 5px once Gateway
-    // moved down to the archway. Measured, not guessed: +ve bows made it worse.
-    { from: 'manual-run',     to: 'gateway',        transport: 'kafka', bow: -0.8,
-      topic: 'ec.surveillance-manual-run.{tenant}.ingestion' },
-    /*
-     * The manual-run bypass, and it genuinely is one: a manual-run
-     * communication is qualified before it ever reaches Gateway, so it skips
-     * Queue Qualifier entirely and runs from Gateway's outbox straight to
-     * Surveillance Filter. Straight, it goes through the middle of the station
-     * it bypasses, which says the opposite of what it means.
-     *
-     * Now that the qualifier and the filter are both on the new line, the bow
-     * that used to carry it round is the wrong tool — a screen-space bow between
-     * two stops on the same line just bulges symmetrically. A control point puts
-     * the curve where it has to be: it climbs clear of the line, passes ABOVE
-     * and behind Queue Qualifier with about a cell of daylight, and comes back
-     * down onto the line to the left of Surveillance Filter, so it arrives at
-     * the track rather than clipping the corner of the building.
-     *
-     * Above and not below on purpose. Below the line is the foreground, and it
-     * is already carrying the retry loop and the dead letter siding; a bypass
-     * threaded through those would read as part of the failure path.
-     */
-    { from: 'gateway',        to: 'filter',         transport: 'cdc',
-      ctrl: { x: 5.5, y: 12.2 },
-      topic: 'ec.surveillance-gateway.outbox.{tenant}.qualifiedCommunication' },
-
-    { from: 'config-curator', layer: 'config', to: 'qualifier',      transport: 'kafka',
-      topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
-    { from: 'config-curator', layer: 'config', to: 'filter',         transport: 'kafka',
-      topic: 'ec.config-curator.{tenant}.surveillance-policies' },
-    { from: 'config-curator', layer: 'config', to: 'quota',          transport: 'kafka',
-      topic: 'ec.config-curator.{tenant}.surveillance-sampling' },
-    { from: 'config-curator', layer: 'config', to: 'review-service', transport: 'kafka',
-      topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
-    { from: 'config-curator', layer: 'config', to: 'reporting',      transport: 'kafka',
-      topic: 'ec.config-curator.{tenant}.surveillance-pipelines' },
-
-    /*
-     * These two edges are named only by their consumer. Config Curator's own
-     * documents never mention alert-generation-config, retention-policies (both
-     * consumed by Alerting, so one edge here) or .configuration — not in its
-     * Events Published table, and not as outbox topics either, though it does
-     * document publishing other topics that way. So the mechanism is probably
-     * the same Debezium outbox, and "probably" is exactly what this map is not
-     * allowed to draw as fact. They are marked unverified and rendered faintly
-     * rather than quietly promoted or quietly dropped: a gap someone can see is
-     * a gap someone can go and close.
-     */
-    { from: 'config-curator', layer: 'config', to: 'alerting',       transport: 'kafka', unverified: true,
-      topic: 'ec.config-curator.{tenant}.alert-generation-config' },
-    { from: 'config-curator', layer: 'config', to: 'echo-engine',    transport: 'kafka', unverified: true,
-      topic: 'ec.config-curator.{tenant}.configuration' },
-
-    { from: 'not-qualified',  to: 'quota',          transport: 'kafka',
-      topic: 'ec.surveillance-filter.{tenant}.not-qualified' },
     { from: 'quota',          to: 'alerting',       transport: 'cdc',
       topic: 'ec.surveillance-quota-manager.{tenant}.surveilled-communication-outbox' },
     { from: 'alerting',       to: 'echo-engine',    transport: 'kafka',
@@ -398,30 +419,440 @@
     { from: 'echo-engine',    to: 'alerting',       transport: 'kafka',
       topic: 'ec.echo-engine.{tenant}.echoAction' },
 
-    // Bowed off Reporting, which the straight run now crosses on its way up.
-    { from: 'evaluator',      to: 'cognition',      transport: 'kafka', bow: -1.2,
+    /*
+     * Policy Evaluator <-> Cognition, as a cargo carousel rather than a rail.
+     *
+     * DEVIATION, FLAGGED RATHER THAN HIDDEN. This map's one structural rule is
+     * "Kafka moves between services, so Kafka is RAIL", and this hop is a real
+     * Kafka topic — it should be a railway by that rule. It is drawn as a
+     * carousel at the repo owner's explicit request: a dedicated two-way
+     * conveyor between exactly these two buildings, which is a fair picture of
+     * a per-tenant point-to-point link and is a deliberate exception, not an
+     * oversight. The topic below is unchanged and still the documented one.
+     */
+    { from: 'evaluator',      to: 'cognition',      transport: 'carousel',
       topic: 'cognition.config.{tenant}.kafkaTopic (per-tenant)' },
-    { from: 'evaluator',      to: 'audit', layer: 'audit',          transport: 'kafka',
-      topic: 'ec.centralized.{tenant}.audit' },
-    { from: 'echo-engine',    to: 'audit', layer: 'audit',          transport: 'kafka',
-      topic: 'ec.centralized.{tenant}.audit' },
 
-    { from: 'audit',          to: 'quota', layer: 'audit',          transport: 'cdc',
-      topic: 'ec.centralised-audit.outbox.{tenant}.windowReconciliation' },
-    { from: 'audit',          to: 'reporting', layer: 'audit',      transport: 'cdc',
-      topic: 'ec.centralised-audit.outbox.{tenant}.windowReconciliation' },
     { from: 'quota',          to: 'reporting', layer: 'audit',      transport: 'cdc',
       topic: 'ec.surveillance-quota-manager.{tenant}.quota-windows' },
-    { from: 'quota',          to: 'manual-run', layer: 'audit',     transport: 'cdc',
-      topic: 'ec.surveillance-quota-manager.{tenant}.quota-windows' },
-    { from: 'reporting',      to: 'conduct-audit', layer: 'audit',  transport: 'kafka',
-      topic: 'conduct_audit_topic' }
+
+    /*
+     * ------------------------------------------------------------------------
+     * The yard throat: TRACKWORK, not topics.
+     * ------------------------------------------------------------------------
+     *
+     * Three roads leave the back of the Alerting shed. The centre one is the
+     * real thing — it carries ec.alerting-service.{tenant}.alertedCommunication
+     * to Echo Engine, read from both ends, and it is listed with the other
+     * modelled edges above. The two outer ones are marked `scene` because that
+     * is all they are: physical yard roads to the Review Service and Reporting
+     * terminals.
+     *
+     * NOTHING IN knowledge/ SAYS ALERTING FEEDS EITHER OF THOSE. Reporting is
+     * fed by Centralized Audit and Quota Manager, and Review Service by Config
+     * Curator; those edges are drawn where they always were, as faint service
+     * lines from the services that really publish to them. Drawing these two
+     * roads as ordinary rails would have quietly asserted two hops the corpus
+     * does not contain, so they are trackwork and say so — the same treatment
+     * the line out of the Archive gets, and for the same reason.
+     *
+     * The S on each side is two quadratics meeting at yard-l2 / yard-r2, where
+     * the road is momentarily square to the line. The control points are the
+     * tangent intersections: (x of the straight, y of the meeting point) on the
+     * way out, (x of the final straight, y of the meeting point) on the way
+     * back in. That is what makes the pair join without a visible corner and
+     * leaves both ends exactly parallel to the centre road.
+     */
+    /*
+     * The archive approach track: the scenery run from the flatbed's spawn
+     * point, above the Archive, down to the Gateway arch. Without this entry
+     * the renderer draws no rail for that leg and the logistics flatbed appears
+     * to float on open ground before Gateway. Not an estate fact.
+     */
+    { from: 'logistics-origin', to: 'gateway', transport: 'rail', scene: true },
+
+    { from: 'alerting', to: 'yard-l0', transport: 'rail', scene: true },
+    { from: 'yard-l0',  to: 'yard-l1', transport: 'rail', scene: true },
+    { from: 'yard-l1',  to: 'yard-l2', transport: 'rail', scene: true, ctrl: { x: 16.60, y: 2.00 } },
+    { from: 'yard-l2',  to: 'yard-l3', transport: 'rail', scene: true, ctrl: { x: 14.95, y: 2.00 } },
+    { from: 'yard-l3',  to: 'review-service', transport: 'rail', scene: true },
+
+    { from: 'alerting', to: 'yard-r0', transport: 'rail', scene: true },
+    { from: 'yard-r0',  to: 'yard-r1', transport: 'rail', scene: true },
+    { from: 'yard-r1',  to: 'yard-r2', transport: 'rail', scene: true, ctrl: { x: 18.40, y: 2.00 } },
+    { from: 'yard-r2',  to: 'yard-r3', transport: 'rail', scene: true, ctrl: { x: 20.05, y: 2.00 } },
+    { from: 'yard-r3',  to: 'reporting', transport: 'rail', scene: true },
+
+    /*
+     * Indexer → Surveilled Index and Indexer → Review Index.
+     *
+     * Two distinct, non-overlapping belts of equal length (√10 ≈ 3.16 grid
+     * units) that fan gently left and right from the same forward-facing side of
+     * the Indexer building. Both run up-right on screen in the same general
+     * direction as the Alerting → Echo Engine leg. Different speeds and densities
+     * make the two streams visually distinguishable: surveil is fast and dense,
+     * review is slow and sparse. Sourced to the estate documents; the Indexer
+     * feeds both ES stores.
+     */
+    { from: 'indexer', to: 'surveil', transport: 'belt',
+      topic: 'index -> Surveilled Index (ES)',
+      beltSpeed: 1.9, beltDensity: 2.4 },   // fast, densely packed
+    { from: 'indexer', to: 'review',  transport: 'belt',
+      topic: 'index -> Review Index (ES)',
+      beltSpeed: 0.55, beltDensity: 0.55 }  // slow, sparsely packed
   ];
+
+  /*
+   * Stop-level panel content, keyed by stop id.
+   *
+   * Two layers: a business layer (always visible) and a technical layer (revealed
+   * on request). Each entry is independently readable — failure paths are stated
+   * wherever they apply, even where the wording overlaps across stops.
+   *
+   * Function names, class names, and source-file references are confined to the
+   * technical layer (note / src). Nothing in the business layer is invented;
+   * all content traces to knowledge/Conduct Services/<name>/*_stop_info.md.
+   */
+  var STOP_INFO = {
+
+    'ea-s3': {
+      business: 'A communication has arrived and is staged for compliance ' +
+                'surveillance. The document sits in secure storage — nothing has ' +
+                'been evaluated yet.',
+      events: [
+        'Communication received and stored in EA S3',
+        'A bulk-index event is published to signal the pipeline to begin processing'
+      ],
+      note: 'A large indexable.json sits in the EA S3 bucket. A BulkIndexEvent ' +
+            'pointing at it is published to supBulkIndexingTopic_k8s.',
+      src: 'Gateway/ec-gateway_stop_info.md · Input'
+    },
+
+    'gateway': {
+      business: 'The communication enters the compliance pipeline. It is compressed ' +
+                'to reduce processing cost, then registered under a reconciliation ' +
+                'window that guarantees it will be processed even if a downstream ' +
+                'service is temporarily unavailable.',
+      events: [
+        'Document downloaded from S3 and compressed to a smaller format',
+        'Assigned to a reconciliation window for end-to-end tracking',
+        'Queued via a durable outbox — delivery guaranteed even across service restarts'
+      ],
+      failurePath: 'If processing fails, the message retries twice before landing on ' +
+                   'a dead-letter topic. The communication is retained but requires ' +
+                   'operational intervention to re-process.',
+      note: 'BulkIndexingEventConsumer fetches indexable.json from S3, minifies and ' +
+            're-uploads it as miniIndexable.json, then inserts an ' +
+            'IngestedCommunicationOutboxEntity scoped to a reconciliation window. ' +
+            'Debezium publishes the outbox row — Gateway never emits the event directly.',
+      src: 'Gateway/ec-gateway_stop_info.md · Transformation'
+    },
+
+    'qualifier': {
+      business: 'The communication is matched against active surveillance pipelines ' +
+                'to determine whether any monitored population is involved. Documents ' +
+                'with no pipeline match exit here permanently to an audit record — ' +
+                'they will never reach a compliance reviewer.',
+      events: [
+        'Participants extracted from the communication document',
+        'Matched against all active pipeline surveilled populations',
+        'One or more matches: routed to compliance processing',
+        'Zero matches: published to centralized audit and processing ends'
+      ],
+      terminalEvent: 'Communications with no pipeline match are published to the ' +
+                     'centralized audit topic — a permanent record that the communication ' +
+                     'was seen and cleared, without compliance review.',
+      failurePath: 'If the document cannot be fetched or participants cannot be extracted, ' +
+                   'the message retries twice before landing on a dead-letter topic. ' +
+                   'Manual re-processing is required.',
+      note: 'IngestedCommunicationConsumer fetches the communication document from S3, ' +
+            'extracts participants, and matches them against the tenant\'s ' +
+            'surveilled-population collections. One or more pipeline matches routes to ' +
+            'qualifications; zero matches routes straight to centralized audit.',
+      src: 'Queue Qualifier/ec-queue-qualifier_stop_info.md · Processing'
+    },
+
+    'filter': {
+      business: 'The communication is tested against two layers of surveillance ' +
+                'policy: rules that explicitly exclude it from review, then rules that ' +
+                'flag it for compliance attention. Most qualified communications ' +
+                'clear both layers.',
+      events: [
+        'Ignore rules evaluated — matched communications are sent to audit and exit here',
+        'Flag policies evaluated against remaining communications',
+        'QUALIFIED communications proceed to policy evaluation',
+        'NOT_QUALIFIED communications are published to the not-qualified topic'
+      ],
+      terminalEvent: 'NOT_QUALIFIED communications are published to the not-qualified ' +
+                     'topic. A corresponding audit event is also published to the ' +
+                     'centralized audit record — the document was seen and assessed, ' +
+                     'without reaching a compliance reviewer.',
+      failurePath: 'Recoverable errors trigger up to two retries. After exhaustion the ' +
+                   'message is routed to a dead-letter topic and will not be re-evaluated ' +
+                   'automatically.',
+      note: 'Two-phase evaluation against locally cached Config Curator data. The Ignore ' +
+            'phase discards matched communications to audit; the Filter phase then tests ' +
+            'the rest against flag policies. QUALIFIED proceeds; NOT_QUALIFIED exits ' +
+            'here to the not-qualified topic.',
+      src: 'Surveillance Filter/ec-surveillance-filter_stop_info.md · Decisions'
+    },
+
+    'evaluator': {
+      business: 'The communication is assessed for compliance violation. Simple rule ' +
+                'matches are resolved immediately; those requiring content analysis are ' +
+                'forwarded to the Cognition AI platform. The outcome determines whether ' +
+                'a compliance alert will be generated.',
+      events: [
+        'Policy type classified: metadata-only or content-analysis',
+        'Metadata-only matches published immediately to the surveilled topic',
+        'Content-analysis matches forwarded to Cognition AI for evaluation',
+        'Cognition result received and routed: PASS proceeds, FAIL/TIMEOUT/FILTER go to audit'
+      ],
+      terminalEvent: 'FAIL, TIMEOUT, and FILTER outcomes are published to the centralized ' +
+                     'audit topic. These communications are recorded but do not proceed ' +
+                     'to alerting and will not appear in any review queue.',
+      failurePath: 'Each consumer retries up to three times. After exhaustion the message ' +
+                   'lands on a dead-letter topic. Certain non-retryable errors bypass ' +
+                   'the retry ladder entirely.',
+      note: 'Metadata-only policies pass through directly to the surveilled topic. ' +
+            'Content-analysis policies are forwarded to the Cognition AI platform; COMS ' +
+            'results route PASS to surveilled or FAIL/TIMEOUT/FILTER to centralized audit.',
+      src: 'Policy Evaluator/ec-surveillance-policy-evaluator_stop_info.md · Processing'
+    },
+
+    'quota': {
+      business: 'The communication is counted against the tenant\'s surveillance quota ' +
+                'and evaluated for sampling. This determines the volume of communications ' +
+                'that proceed to active alerting versus those retained for reporting only.',
+      events: [
+        'Quota recorded against the current reconciliation window',
+        'Sampling evaluated per pipeline using probabilistic counters',
+        'Metadata event published to downstream reporting systems',
+        'Outbox written for reliable delivery to Alerting'
+      ],
+      failurePath: 'After two retries the message is routed to a dead-letter topic. ' +
+                   'The quota for the affected communications may be underreported ' +
+                   'until the message is re-processed.',
+      note: 'SurveilledCommunicationConsumer stores quota data, fetches participants ' +
+            'from S3, and evaluates probabilistic sampling per pipeline using Redis ' +
+            'bucket counters. A surveilled-communication-outbox row is written; ' +
+            'Debezium routes it to Alerting.',
+      src: 'Quota Manager/ec-surveillance-quota-manager_stop_info.md · Processing'
+    },
+
+    'alerting': {
+      business: 'The communication becomes a live alert in the compliance review ' +
+                'queue. This is the end of the automated surveillance journey — ' +
+                'from here, a compliance officer takes action.',
+      events: [
+        'Communication enriched with organisation metadata from S3 and microservices',
+        'Retention policy applied and mapped in shadow collections',
+        'Alert generated and written to the review system',
+        'AlertedCommunicationEvent published to the Indexer and Echo Engine'
+      ],
+      terminalEvent: 'AlertedCommunicationEvent is published — the compliance alert is ' +
+                     'live in the review queue and downstream indexing and echo ' +
+                     'processing begin.',
+      failurePath: 'Recoverable errors retry with exponential backoff. After exhaustion ' +
+                   'the message lands on a dead-letter topic — the alert will not appear ' +
+                   'in the review queue until re-processed.',
+      note: 'SurveilledCommunicationConsumer enriches the communication with org metadata ' +
+            'via S3 and microservice calls, applies retention policies through windowed ' +
+            'shadow collections, and generates an alert. AlertedCommunicationEvent is ' +
+            'published to the Indexer and Echo Engine.',
+      src: 'Alerting/ec-alerting-service_stop_info.md · Processing'
+    },
+
+    'echo-engine': {
+      business: 'Reduces alert fatigue by detecting "echo" alerts — redundant alerts ' +
+                'triggered by the same underlying content across multiple policies or ' +
+                'channels — and emitting automated close or update actions back to the ' +
+                'Alerting service.',
+      events: [
+        'Consumes alert CDC events from the Alerting service',
+        'Computes a deterministic policy-hits hash per alert',
+        'Correlates against a per-tenant MongoDB state store to classify the alert',
+        'Publishes an EchoActionEvent with the classification result'
+      ],
+      terminalEvent: 'EchoActionEvent published to ec.echo-engine.{tenant}.echoAction — ' +
+                     'classified as ECHO_ORIGINAL (first occurrence), ECHO_DETECTED, or ' +
+                     'ECHO_DUPLICATE. Non-CREATE and non-policy alerts are silently skipped.',
+      failurePath: 'Standard consumer retry then dead-letter topic per application config. ' +
+                   'Validation failures (non-CREATE / non-policy alerts) short-circuit as ' +
+                   'a business exclusion — they do not retry.',
+      note: 'AlertProcessingService validates → PolicyHitsHashGeneratorService hashes → ' +
+            'EchoStateStoreService reads/writes the alcatraz MongoDB state store → ' +
+            'EchoCorrelationService classifies → EchoActionAuditAdapter records. ' +
+            'Local policy and echo config kept in sync via PolicyConfigConsumer / ' +
+            'EchoConfigConsumer CDC.',
+      src: 'Echo Engine/ec-echo-engine_stop_info.md · Processing'
+    },
+
+    'audit': {
+      business: 'Central sink and reconciliation engine for the entire surveillance pipeline. ' +
+                'Persists a complete, immutable audit trail of every document\'s journey ' +
+                'across all processing stages, and periodically reconciles ingested vs. ' +
+                'processed message counts to detect gaps.',
+      events: [
+        'Nine Kafka consumers ingest audit, communication, config, quota, pipeline, DLT, and legacy events',
+        'Audit events written to ec-audit-events; pipeline summaries bulk-upserted',
+        'Reconciliation schedulers compare audit counts against the Gateway watermark every 15 minutes',
+        'On reconciliation, source-reconciled and policy-evaluation-reconciled events published downstream via Debezium outbox'
+      ],
+      failurePath: 'Communication events retry via a custom 2-level retry ladder then ' +
+                   'ec.centralized.{tenant}.audit-events-dlt. CDC consumers use Spring ' +
+                   '@RetryableTopic (backoff 1 s, ×2) then -centralised-audit-dlt. ' +
+                   'Gateway HTTP client retries twice at 1 s backoff; non-retriable failures rethrow.',
+      note: 'Ten per-tenant MongoDB collections in alcatraz. Two ShedLock cron schedulers ' +
+            '(reconShedLock, sourceWindowReconShedLock, default every 15 min). ' +
+            'Cognition reconciliation is triggered by Debezium CDC delete events on the ' +
+            'cognition-reconciliation collection. Bootstrap endpoint is idempotent.',
+      src: 'Centralized Audit/ec-centralised-audit_stop_info.md · Detailed narrative'
+    },
+
+    'config-curator': {
+      business: 'Control-plane orchestrator that curates and distributes surveillance ' +
+                'configuration — pipelines, policies, sampling — across all tenant data-plane ' +
+                'services. Gates config delivery behind per-tenant freeze windows and rotates ' +
+                'quota windows on a schedule.',
+      events: [
+        'Receives legacy config JSON and Debezium CDC events; evaluates the tenant freeze status',
+        'Routes config to Kafka curator topics (unfrozen) or stages to MongoDB (frozen)',
+        'On freeze-end, replays all staged messages in paginated, transactional batches',
+        'On schedule, rotates the quota window and POSTs bootstrap config to 8–9 downstream services'
+      ],
+      failurePath: 'Legacy consumer failure → exponential backoff retry → DLT. ' +
+                   'Unmappable topics raise NonRetryableConfigException → straight to DLT. ' +
+                   'Bootstrap step failure → full transaction rollback and failure outbox event; ' +
+                   'the job is not rescheduled. Missing quota window → RuntimeException (retried).',
+      note: 'Four runtime paths: legacy config sync, freeze-window replay, scheduled ' +
+            'bootstrap/window rotation, tenant CDC sync/onboarding. Payload body is never ' +
+            'modified — only topic routing and headers (tenantName, nextWindowToken) change. ' +
+            'ShedLock guards the freeze (default every 15 min). New tenant onboarding ' +
+            'initialises a Day-0 quota window and two cron jobs.',
+      src: 'Config Curator/ec-config-curator stop info.md · Detailed narrative'
+    },
+
+    'indexer': {
+      business: 'Indexes communication documents into Elasticsearch to power Review and ' +
+                'Surveillance workflows. Downloads content from S3, resolves the target index, ' +
+                'and writes the parent document — with audio enrichment where applicable.',
+      events: [
+        'Consumes ingested, surveilled, and parent-reindex communication events',
+        'Resolves the target index name via the Supervision API if absent from the event header',
+        'Downloads indexable content from S3 (parallel, chunked)',
+        'Writes the document to surveil.av5 or review.v1 in Elasticsearch',
+        'Publishes an audit event on successful ingestion-flow indexing'
+      ],
+      terminalEvent: 'AuditEvent published to ec.centralized.{tenant}.audit.indexer.event — ' +
+                     'confirms the document is now searchable in the surveillance index.',
+      failurePath: 'Any consumer failure → retry-0 → retry-1 → -ec-indexer-dlt. ' +
+                   'Empty S3 on parent re-index → NonRetryableEventException → straight to DLT. ' +
+                   'When S3 is empty on ingested flow, a ConductAction is forwarded to the ' +
+                   'Indexing Gateway instead of indexing to ES.',
+      note: 'Three flows: ingested (S3 → ES → audit), surveilled/audio (EA Storage + child ' +
+            'indexing, re-index parent from S3 if missing), parent re-index (Config Curator ' +
+            'for tenant UUID resolution → S3). Tenant-specific per-consumer beans via ' +
+            'MultiTenancyConfig. S3 download uses a virtual-thread executor.',
+      src: 'Indexer/ec-indexer_stop_info.md · Detailed narrative'
+    },
+
+    'review-service': {
+      business: 'Authoritative source for reviewer configuration in the supervision workflow: ' +
+                'reviewer groups, pipeline reviewer assignments, and per-pipeline review ' +
+                'entitlements. Keeps reviewer state in sync with surveillance pipeline ' +
+                'changes published by Config Curator.',
+      events: [
+        'Consumes ec.config-curator.{tenant}.surveillance-pipelines CDC events to mirror reviewer state',
+        'Upserts or deletes supervision-queue reviewer documents in MongoDB',
+        'REST endpoints for reviewer-group CRUD, pipeline-reviewer-group assignment, and entitlement import/export',
+        'All mutations produce AuditEvent records persisted to app_audit_new'
+      ],
+      failurePath: 'CDC consumer → Spring @RetryableTopic retry then -review-service-dlt. ' +
+                   'Stale CDC events (older updatedTime) routed to DLT without overwriting. ' +
+                   'HTTP calls to Config Curator and Queue Qualifier retry on 5xx or connection ' +
+                   'error (1 s backoff, ×2); 404 raises NotFoundError.',
+      note: 'Three domains: pipeline sync (CDC), reviewer groups & assignments (REST), ' +
+            'review entitlements (REST + CSV import up to 500 rows / 5 MB). Entitlement ' +
+            'imports validated against Config Curator (window token) and Queue Qualifier ' +
+            '(surveilled population). Entitlement replace is delete-then-saveAll in a ' +
+            'MongoDB transaction. Partial success returns HTTP 207.',
+      src: 'Review Service/ec-review-service_stop_info.md · Detailed narrative'
+    },
+
+    'surveil': {
+      business: 'Tenant-specific Elasticsearch index that stores surveilled communication ' +
+                'documents for the surveillance workflow. The Indexer writes here after a ' +
+                'document has passed through the full pipeline — including audio enrichment ' +
+                'where applicable.',
+      events: [
+        'Receives parent documents and audio enrichment child documents from the Indexer',
+        'External versioning (ptime) prevents newer documents being overwritten by late arrivals',
+        'Managed by an ILM rollover policy (surveil_data_ilm_{tenant}) for ongoing index lifecycle',
+        'Routing determined by index name suffix (-surveil.av5) via ElasticsearchClientFactory'
+      ],
+      note: 'Index name pattern: {tenant}-surveil.av5*. Created only for tenants that are both ' +
+            'v3-enabled AND audio-enabled. Join relation: idoc → enrich (parent doc + audio ' +
+            'enrichment children). Carries a surveilled boolean field. Lives on a separate ' +
+            'Elasticsearch cluster from the review index (surveilClientCache, keyed by config group). ' +
+            'Provisioned by create_surveil_es_template.sh; mapping updates via ' +
+            'update_surveil_index_mapping.sh. Metric label: es_surveil_indexing_latency.',
+      src: 'User-provided: ec-indexer Elasticsearch index knowledge · Surveil Index'
+    },
+
+    'review': {
+      business: 'Tenant-specific Elasticsearch index that stores communication documents for ' +
+                'the compliance review workflow. Carries an embedded review state block — ' +
+                'assigned reviewers, tags, comments, and policy actions — and is the primary ' +
+                'data source for the supervision review UI.',
+      events: [
+        'Receives parent documents from the Indexer for all v3-enabled tenants',
+        'Join relation supports parent doc (idoc) with review and enrich children',
+        'Embedded review object tracks queue info, current/last/past reviewer state, and policy actions',
+        'External versioning (ptime) prevents newer documents being overwritten by late arrivals'
+      ],
+      note: 'Index name pattern: {tenant}-review.av5 (suffix configurable per tenant group). ' +
+            'Created for all v3-enabled tenants (audio and non-audio alike). ILM rollover alias ' +
+            '{tenant}-review.av5-{date}-000001 via review_data_ilm policy. Separate Elasticsearch ' +
+            'cluster from the surveil index (reviewClientCache). Routing decided by index name: ' +
+            'contains -review.av5 → review client, otherwise surveil client. Metric label: ' +
+            'es_review_indexing_latency. Note: ec-review-service manages MongoDB reviewer ' +
+            'assignments — it is entirely separate from this index.',
+      src: 'User-provided: ec-indexer Elasticsearch index knowledge · Review Index'
+    },
+
+    'reporting': {
+      business: 'Aggregates reporting data for the surveillance pipeline — counting alerts ' +
+                'and echo cancellations per pipeline, tracking communication-event logs per ' +
+                'quota window, and generating DHC pipeline execution reports on reconciliation. ' +
+                'Terminating events are forwarded to Conduct Audit.',
+      events: [
+        'Six consumers across pipeline completion, reconciliation, config/quota CDC, event-log batch, and audit-event-log',
+        'PipelineCompletionService counts alerts and echo cancellations from supervised_items',
+        'ReconciledEventHandler calls the pipeline-qualifier and generates DHC execution reports',
+        'EventLogService persists pipeline events to window-scoped MongoDB collections',
+        'Terminating events forwarded to conduct_audit_topic; ingested-comm events published to event-logging publisher'
+      ],
+      terminalEvent: 'ConductAuditMessage published to conduct_audit_topic — forwarded when ' +
+                     'a terminating pipeline event is detected. EventLogMessage published to ' +
+                     'eventloggingpublisher_k8s for ingested-communication events.',
+      failurePath: 'EventLogConsumer: manual retry-0 → retry-1 → ec.centralized.{tenant}.audit.ec-reporting-dlt. ' +
+                   'CDC/reconciliation consumers: Spring @RetryableTopic (auto retry → DLT). ' +
+                   'NonRetryableEventException routes straight to DLT.',
+      note: 'ShedLock pipelineSummary cron runs every 15 min. Window-scoped MongoDB collections ' +
+            '(ec-reporting-pipeline-events_{windowToken}) via CollectionMappingConfig. ' +
+            'supervised_items is read-only, owned by another service. Bootstrap endpoint is ' +
+            'idempotent — skips if the window collection already exists.',
+      src: 'Reporting/ec-reporting_stop_info.md · Detailed narrative'
+    }
+
+  };
 
   /*
    * The walk. `cargo` is what the document IS on arrival at that stop — this is
    * what makes the map teach rather than decorate. `dwell` scales with how much
-   * the stop has to explain.
+   * the stop has to explain. `note` and `src` live in STOP_INFO; steps carry
+   * only journey-specific fields (timing, transport, document state).
    */
   var HAPPY = {
     id: 'happy',
@@ -429,61 +860,34 @@
     steps: [
       { at: 'ea-s3', dwell: 2200,
         title: 'Raw communication lands',
-        cargo: { label: 'indexable.json', tint: '#94a3b8', stamps: [] },
-        note: 'A large indexable.json sits in the EA S3 bucket. A BulkIndexEvent ' +
-              'pointing at it is published to supBulkIndexingTopic_k8s.',
-        src: 'Gateway/EVENT_FLOW_MAP.md · Events Consumed' },
+        cargo: { label: 'indexable.json', tint: '#94a3b8', stamps: [] } },
 
       { at: 'gateway', via: 'supBulkIndexingTopic_k8s', dwell: 4200,
         title: 'Ingested and minified',
-        cargo: { label: 'miniIndexable.json', tint: '#38bdf8', stamps: ['minified', 'outboxed'] },
-        note: 'BulkIndexingEventConsumer downloads the JSON from S3, strips it to a ' +
-              '"mini" version, re-uploads it, and writes an IngestedCommunicationOutbox ' +
-              'row scoped to a reconciliation window.',
-        src: 'Gateway/ec-gateway_stop_info.md · Transformation' },
+        cargo: { label: 'miniIndexable.json', tint: '#38bdf8', stamps: ['minified', 'outboxed'] } },
 
       { at: 'qualifier', via: 'outbox -> Debezium', dwell: 4200,
         title: 'Qualified against pipelines',
-        cargo: { label: 'QualifiedCommunicationDto', tint: '#22d3ee', stamps: ['minified', 'qualified'] },
-        note: 'Gateway does not publish this itself. Debezium reads the Mongo outbox ' +
-              'and publishes ingestedCommunication, which Queue Qualifier consumes and ' +
-              'matches against the tenant\'s surveillance pipelines.',
-        src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Consumed' },
+        cargo: { label: 'QualifiedCommunicationDto', tint: '#22d3ee', stamps: ['minified', 'qualified'] } },
 
       { at: 'filter', via: 'ec.surveillance-qualifier.{tenant}.qualifications', dwell: 4400,
-        title: 'Filtered',
-        cargo: { label: 'PipelineEvaluationEvent', tint: '#34d399', stamps: ['minified', 'qualified', 'filtered'] },
-        note: 'Evaluates the communication against pipeline rules. A document that does ' +
-              'not qualify leaves here on .not-qualified and travels no further — a ' +
-              'terminal state at a service.',
-        src: 'Surveillance Filter/EVENT_FLOW_MAP.md · Events Published' },
+        title: 'Two-phase policy filter',
+        cargo: { label: 'PipelineEvaluationEvent', tint: '#34d399', stamps: ['minified', 'qualified', 'filtered'] } },
 
       { at: 'evaluator', via: 'ec.surveillance-filter.{tenant}.evaluations', dwell: 4600,
-        title: 'Policies evaluated',
+        title: 'Metadata pass-through or Cognition',
         cargo: { label: 'CognitionResponseEvent', tint: '#a78bfa',
-                 stamps: ['minified', 'qualified', 'filtered', 'surveilled'] },
-        note: 'Policies are applied and the result comes back as a surveilled ' +
-              'communication. This is where compliance violation is determined, and it ' +
-              'decides which yard the cargo ends up in.',
-        src: 'Policy Evaluator/EVENT_FLOW_MAP.md · Events Published' },
+                 stamps: ['minified', 'qualified', 'filtered', 'surveilled'] } },
 
-      { at: 'indexer', via: 'ec.surveillance-policy-evaluator.{tenant}.surveilled', dwell: 4400,
-        title: 'Indexed',
-        cargo: { label: 'indexed document', tint: '#fbbf24',
-                 stamps: ['minified', 'qualified', 'filtered', 'surveilled', 'indexed'] },
-        note: 'Indexer resolves the target index, fetches the document from S3 and writes ' +
-              'it to Elasticsearch — surveil.av5 for clean traffic, review.v1 for anything ' +
-              'alerted.',
-        src: 'Indexer/EVENT_FLOW_MAP.md · Persistent Store Interactions' },
+      { at: 'quota', via: 'ec.surveillance-policy-evaluator.{tenant}.surveilled', dwell: 3800,
+        title: 'Sampled and queued',
+        cargo: { label: 'SurveilledEvent', tint: '#818cf8',
+                 stamps: ['minified', 'qualified', 'filtered', 'surveilled'] } },
 
-      { at: 'surveil', via: 'index -> surveil.av5', dwell: 3600, terminal: true,
-        title: 'Cleared',
-        cargo: { label: 'surveil.av5 document', tint: '#4ade80',
-                 stamps: ['minified', 'qualified', 'filtered', 'surveilled', 'indexed', 'cleared'] },
-        note: 'The Clearance Terminal. Compliant traffic is archived here and the ' +
-              'journey ends. Alerted traffic would have been offloaded at the Violation ' +
-              'Depot, review.v1, instead.',
-        src: 'Indexer/ec-indexer_stop_info.md' }
+      { at: 'alerting', via: 'ec.surveillance-quota-manager.{tenant}.surveilled-communication-outbox',
+        dwell: 4200, title: 'Alert generated', terminal: true,
+        cargo: { label: 'AlertedCommunicationEvent', tint: '#fb923c',
+                 stamps: ['minified', 'qualified', 'filtered', 'surveilled', 'alerted'] } }
     ]
   };
 
@@ -548,24 +952,13 @@
         src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Consumed #2' },
 
       { at: 'qualifier', via: '{topic}-retry-1', dwell: 4800,
-        attempt: { n: 3, of: 3 }, failed: true,
-        title: 'Attempt 3 — final retry',
-        cargo: { label: 'unprocessed message', tint: '#dc2626', stamps: ['minified', 'retried', 'retried'] },
+        attempt: { n: 3, of: 3 }, failed: true, terminal: true,
+        title: 'Ladder exhausted',
+        cargo: { label: 'unprocessed message', tint: '#7f1d1d', stamps: ['minified', 'retried', 'retried', 'dead'] },
         note: 'Last chance. secondRetry() is documented as the "second/final retry; ' +
-              'sends to DLT on failure" — there is no retry-2. When this one fails the ' +
-              'ladder is out of rungs and the message stops being retried at all.',
-        src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Consumed #3' },
-
-      { at: 'qualifier-dlt', via: '{topic}-dlt', dwell: 5200, terminal: true, failed: true,
-        title: 'Dead letter — the siding',
-        cargo: { label: 'dead letter', tint: '#7f1d1d', stamps: ['minified', 'retried', 'retried', 'dead'] },
-        note: 'The document is parked on the dead letter topic and travels no further. ' +
-              'Nothing downstream ever sees it: no qualification, no filtering, no ' +
-              'policy evaluation, no index entry. It is not lost — it is sitting on a ' +
-              'topic waiting for a human — but as far as the estate is concerned this ' +
-              'communication was never surveilled. Deserialization failures are put ' +
-              'here directly, without using the ladder at all.',
-        src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Published #6' }
+              'sends to DLT on failure" — there is no retry-2. The ladder is out of ' +
+              'rungs and the message stops being retried at all.',
+        src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Consumed #3' }
     ]
   };
 
@@ -615,51 +1008,17 @@
         src: 'Queue Qualifier/EVENT_FLOW_MAP.md · Events Published #1, #2' },
 
       { at: 'filter', via: 'ec.surveillance-qualifier.{tenant}.qualifications', dwell: 5400,
-        title: 'Evaluated — and not flagged',
+        title: 'Evaluated — and not flagged', terminal: true,
         cargo: { label: 'PipelineEvaluationEvent', tint: '#fbbf24',
                  stamps: ['minified', 'qualified', 'evaluated'] },
         note: 'Surveillance Filter runs two phases against locally cached config. The ' +
               'Ignore phase passes — no ignore rule matches, so the document is not ' +
               'discarded. The Filter phase then finds no flag policy that matches ' +
-              'either, which is the NOT_QUALIFIED result. Nothing failed here: this is ' +
-              'the engine deciding the communication does not need review.',
-        src: 'Surveillance Filter/ec-surveillance-filter_stop_info.md · Decisions' },
-
-      { at: 'not-qualified', via: 'ec.surveillance-filter.{tenant}.not-qualified', dwell: 5000,
-        title: 'The surveillance line ends',
-        cargo: { label: 'NOT_QUALIFIED result', tint: '#a3a3a3',
-                 stamps: ['minified', 'qualified', 'evaluated', 'not-qualified'] },
-        note: 'PipelineEvaluationEventPublisher puts the result on the not-qualified ' +
-              'topic. Compare that with the qualified path, which goes to .evaluations ' +
-              'and on to Policy Evaluator: no policy evaluation happens here, no ' +
-              'indexing, no entry in surveil.av5 or review.v1. Two consumers do read ' +
-              'this topic, and neither continues the surveillance — Surveillance ' +
-              'Filter\'s own AuditEventAdapter, next stop, and Quota Manager, which ' +
-              'counts it against the tenant\'s quota.',
-        src: 'Surveillance Filter/EVENT_FLOW_MAP.md · Events Published #2' },
-
-      { at: 'audit', via: 'ec.centralized.{tenant}.audit', dwell: 5200,
-        title: 'But the record carries on',
-        cargo: { label: 'PipelineEvaluationEvent (headers only)', tint: '#818cf8',
-                 stamps: ['minified', 'qualified', 'evaluated', 'not-qualified', 'audited'] },
-        note: 'Terminal does not mean vanished. AuditEventAdapter — a consumer inside ' +
-              'Surveillance Filter itself — reads the not-qualified topic straight back ' +
-              'and re-publishes it to the centralized audit topic, headers only. The ' +
-              'body is dropped; what survives is the fact that this communication was ' +
-              'seen, evaluated and cleared. Centralized Audit consumes it as a primary ' +
-              'audit event from the surveillance pipeline.',
-        src: 'Surveillance Filter/EVENT_FLOW_MAP.md · Events Published #4' },
-
-      { at: 'audit-store', via: 'write -> ec-audit-events', dwell: 4200, terminal: true,
-        title: 'Filed',
-        cargo: { label: 'AuditEvent', tint: '#c7d2fe',
-                 stamps: ['minified', 'qualified', 'evaluated', 'not-qualified', 'audited', 'filed'] },
-        note: 'CommunicationEventService writes the audit event to the ec-audit-events ' +
-              'collection in MongoDB. That row is the estate\'s entire memory of this ' +
-              'document — proof it passed through and was judged not to need review.',
-        src: 'Centralized Audit/EVENT_FLOW_MAP.md · Persistent Store Interactions #1' }
+              'either, which is the NOT_QUALIFIED result. The surveillance line ends here.',
+        src: 'Surveillance Filter/ec-surveillance-filter_stop_info.md · Decisions' }
     ]
   };
 
-  return { stops: STOPS, tracks: TRACKS, scenarios: [HAPPY, RETRY, NOT_QUALIFIED] };
+  return { stops: STOPS, tracks: TRACKS, scenarios: [HAPPY, RETRY, NOT_QUALIFIED],
+           stopInfo: STOP_INFO };
 });

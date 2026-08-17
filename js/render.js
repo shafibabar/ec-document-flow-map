@@ -252,6 +252,12 @@ var Render = (function () {
     sorting:  [0.74, 0.47],
     filtering:[0.74, 0.47],
     scanning: [0.74, 0.47],
+    metering: [0.47, 0.74],    // the second leg's works, rotated with the track
+    cognition:[0.74, 0.47],
+    // A yard is a building the line runs INTO, so its rail is never trimmed:
+    // the last stretch of track belongs under the shed, where the cart vanishes.
+    railyard: [0, 0],
+    terminal: [0, 0],
     edge:     [0, 0]
   };
 
@@ -328,11 +334,13 @@ var Render = (function () {
     return { x: stop.grid.x + ux * r, y: stop.grid.y + uy * r };
   }
 
-  function drawBelt(ctx, canvas, flow, a, b, now, z) {
+  function drawBelt(ctx, canvas, flow, a, b, now, z, track) {
     var pa = placed(flow, a), pb = placed(flow, b);
     var dxg = pb.x - pa.x, dyg = pb.y - pa.y;
     var lenG = Math.sqrt(dxg * dxg + dyg * dyg) || 1;
     var deck = 9;                                          // belt height, world px
+    var speedMult   = (track && track.beltSpeed)   || 1;
+    var densityMult = (track && track.beltDensity) || 1;
 
     /*
      * Stop the belt at the destination's doorway, not at its centre.
@@ -377,7 +385,7 @@ var Render = (function () {
     var len = Math.sqrt(vx * vx + vy * vy) || 1;
     var nx = -vy / len, ny = vx / len;
     var spacing = 11 * z;
-    var slide = ((now || 0) / 34) % spacing;
+    var slide = ((now || 0) * speedMult / 34) % spacing;
     ctx.strokeStyle = 'rgba(30,36,41,.45)';
     ctx.lineWidth = 1.2 * z;
     ctx.beginPath();
@@ -404,20 +412,106 @@ var Render = (function () {
      * one along x its long side. A hard-coded count that looked right on one
      * bearing came out crowded on another.
      */
-    var IN_G = 0.36, OUT_G = 0.34;                         // grid units, not fractions
+    var IN_G = 0.55, OUT_G = 0.48;                         // grid units, not fractions
     var eStart = -IN_G / lenG;
     var eEnd = eFace + OUT_G / lenG;
     var span = eEnd - eStart;
 
     var ux = Math.abs(dxg / lenG), uy = Math.abs(dyg / lenG);
     var boxLen = 2 * (ux * 0.058 + uy * 0.042);            // grid units along the run
-    var BOXES = Math.max(2, Math.round((lenG * span) / (boxLen * 4)));
-    var phase = ((now || 0) / 9000) % (1 / BOXES);
+    var BOXES = Math.max(2, Math.round((lenG * span) / (boxLen * 4) * densityMult));
+    var phase = ((now || 0) * speedMult / 9000) % (1 / BOXES);
     for (i = 0; i < BOXES; i++) {
       var e = eStart + ((phase + i / BOXES) % 1) * span;
       var bp = at(e);
       Sprites.beltBox(ctx, canvas, bp.x, bp.y, deck, z);
     }
+  }
+
+  /*
+   * The cargo carousel: two conveyor runs between two buildings, one going and
+   * one coming back, with a continuous stream of packages on both.
+   *
+   * Drawn in the FLAT pass, before any building, and that is the whole trick
+   * behind the occlusion the brief asks for: both buildings are painted
+   * afterwards and simply cover the ends of the run, so a package reaching a
+   * wall goes behind it and one leaving comes out from behind it. No clip, no
+   * fade, no per-package depth test — and because the belt is covered rather
+   * than truncated, the package is still there, just inside.
+   *
+   * The two runs are offset either side of the centre line by CAROUSEL_GAUGE,
+   * perpendicular in GRID space so the offset lies on the isometric plane and
+   * the pair stays parallel however the buildings are placed.
+   */
+  var CAROUSEL_GAUGE = 0.16;
+
+  function drawCarousel(ctx, canvas, flow, a, b, now, z) {
+    var pa = placed(flow, a), pb = placed(flow, b);
+    var dxg = pb.x - pa.x, dyg = pb.y - pa.y;
+    var lenG = Math.sqrt(dxg * dxg + dyg * dyg) || 1;
+    var ux = dxg / lenG, uy = dyg / lenG;
+    var nx = -uy * CAROUSEL_GAUGE, ny = ux * CAROUSEL_GAUGE;
+    var deck = 9;
+
+    [1, -1].forEach(function (side) {
+      var ga = { x: pa.x + nx * side, y: pa.y + ny * side };
+      var gb = { x: pb.x + nx * side, y: pb.y + ny * side };
+      var p = Iso.toScreen(ga.x, ga.y, canvas);
+      var q = Iso.toScreen(gb.x, gb.y, canvas);
+      var pd = { x: p.x, y: p.y - deck * z }, qd = { x: q.x, y: q.y - deck * z };
+
+      var legs = Math.max(3, Math.round(lenG * 2.2));
+      ctx.strokeStyle = '#6a7178';
+      ctx.lineWidth = 2 * z;
+      ctx.beginPath();
+      for (var i = 1; i < legs; i++) {
+        var lp = Iso.toScreen(ga.x + (gb.x - ga.x) * (i / legs),
+                              ga.y + (gb.y - ga.y) * (i / legs), canvas);
+        ctx.moveTo(lp.x, lp.y);
+        ctx.lineTo(lp.x, lp.y - deck * z);
+      }
+      ctx.stroke();
+
+      stroke(ctx, [pd, qd], '#4b5157', 11 * z);
+      stroke(ctx, [pd, qd], '#6d757c', 8.5 * z);
+
+      // Roller ticks, running the way this side of the carousel runs.
+      var vx = qd.x - pd.x, vy = qd.y - pd.y;
+      var len = Math.sqrt(vx * vx + vy * vy) || 1;
+      var rx = -vy / len, ry = vx / len;
+      var spacing = 10 * z;
+      var slide = side > 0 ? ((now || 0) / 30) % spacing
+                           : spacing - (((now || 0) / 30) % spacing);
+      ctx.strokeStyle = 'rgba(30,36,41,.45)';
+      ctx.lineWidth = 1.1 * z;
+      ctx.beginPath();
+      for (var d = slide; d < len; d += spacing) {
+        var cx = pd.x + vx * (d / len), cy = pd.y + vy * (d / len);
+        ctx.moveTo(cx - rx * 4 * z, cy - ry * 4 * z);
+        ctx.lineTo(cx + rx * 4 * z, cy + ry * 4 * z);
+      }
+      ctx.stroke();
+      stroke(ctx, [pd, qd], '#868e95', 1.3 * z);
+
+      /*
+       * The stream. Both ends of the run are extended past the building walls
+       * so a package is already on the belt when it emerges and is still on it
+       * when it goes in — a package that starts existing at the wall pops into
+       * being, and one that stops at the wall reads as hitting it.
+       */
+      var OVER = 0.34 / lenG;
+      var eStart = -OVER, eEnd = 1 + OVER, span = eEnd - eStart;
+      var BOXES = Math.max(3, Math.round(lenG * span / 0.44));
+      var phase = ((now || 0) / 7000) % (1 / BOXES);
+      for (i = 0; i < BOXES; i++) {
+        var k = (phase + i / BOXES) % 1;
+        // The far side of the carousel runs the other way, which is what makes
+        // the pair a carousel rather than two belts pointing the same way.
+        var e = eStart + (side > 0 ? k : 1 - k) * span;
+        Sprites.packageBox(ctx, canvas, ga.x + (gb.x - ga.x) * e,
+                           ga.y + (gb.y - ga.y) * e, deck, '#c2a06a', z);
+      }
+    });
   }
 
   /** The retry loop: a rail that leaves a station and comes back to it. */
@@ -441,8 +535,9 @@ var Render = (function () {
       return;
     }
 
-    if (track.transport === 'belt') {
-      drawBelt(ctx, canvas, flow, a, b, now, z);
+    if (track.transport === 'belt' || track.transport === 'carousel') {
+      if (track.transport === 'carousel') drawCarousel(ctx, canvas, flow, a, b, now, z);
+      else drawBelt(ctx, canvas, flow, a, b, now, z, track);
       return;
     }
 
@@ -481,6 +576,40 @@ var Render = (function () {
 
   // --------------------------------------------------------------- buildings
 
+  /*
+   * Approximate world-pixel height of each building type. Used to size the LST
+   * at 1.5× the adjacent building so it is always visibly taller. Values cover
+   * the tallest visible element, not just the main hall — cranes, silos, frames
+   * and roof kits are included in the estimate.
+   */
+  /*
+   * How far to place the LST from the building's placed centre, in grid units,
+   * along the +x / -y diagonal. The default (0.60) clears every standard-sized
+   * building; the yards are oversized so their LST needs a wider berth.
+   * railyard apron hw ≈ 0.94 (ALERT_HW + 0.14); frame rib at ±0.86 → need > 0.86.
+   * terminal apron hw ≈ 0.74 (TERM_HW + 0.12); frame rib at ±0.67 → need > 0.74.
+   */
+  var LST_OFF = { railyard: 1.10, terminal: 0.95, 'audit-vault': 0.72, 'data-indexer': 0.92 };
+
+  var BUILD_H = {
+    archive:       60,    // large external record store
+    sorting:       45,    // works stations on the new line (frame is WORKS_H + 12)
+    filtering:     45,
+    scanning:      45,
+    metering:      45,
+    cognition:     45,
+    railyard:      45,
+    terminal:      42,    // B + TERM_H + roof kit ≈ 2 + 26 + 14
+    depot:         34,    // S3 / Mongo main hall
+    vault:         26,
+    siding:        12,
+    'audit-vault': 54,    // AUDIT_BASE + AUDIT_H + deck + tower = 3 + 38 + 4 + 24 + 2.5 ≈ LST taller at 81
+    'ui-portal':   30,    // 4 + 22 + 4
+    'data-indexer':48,    // B(2) + DI_H(34) + deck(4) + portal ribs
+    'es-silo':     42,    // 4 + 10 + 3 + silo 22 + cap 3
+    'config-engine':34    // 4 + 26 + 4
+  };
+
   function drawStop(ctx, canvas, stop, state, z, t) {
     if (stop.kind === 'edge') return;                    // a bare end of line
     // The three works on the new line. Same bones, different roof machinery —
@@ -488,6 +617,11 @@ var Render = (function () {
     if (stop.kind === 'sorting') return Sprites.sortingStation(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'filtering') return Sprites.filterStation(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'scanning') return Sprites.scanStation(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'metering') return Sprites.meterStation(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'cognition') return Sprites.cognitionWorks(ctx, canvas, stop, state, z, t);
+    // Yards: buildings the line runs into rather than past.
+    if (stop.kind === 'railyard') return Sprites.railYard(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'terminal') return Sprites.terminalYard(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'archive') return Sprites.archive(ctx, canvas, stop, state, z, t);
     if (stop.kind === 'station') return Sprites.station(ctx, canvas, stop, state, z);
     if (stop.kind === 'yard') return Sprites.depot(ctx, canvas, stop, state, z);
@@ -496,8 +630,14 @@ var Render = (function () {
     if (stop.kind === 'external') return Sprites.external(ctx, canvas, stop, state, z);
     if (stop.kind === 'depot') {
       return stop.tech === 'MongoDB' ? Sprites.vault(ctx, canvas, stop, state, z)
-                                     : Sprites.s3Depot(ctx, canvas, stop, state, z);
+                                     : Sprites.s3Depot(ctx, canvas, stop, state, z, t);
     }
+    // New infrastructure added in the railway-map refactor.
+    if (stop.kind === 'audit-vault')   return Sprites.auditVault(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'ui-portal')     return Sprites.uiPortalSprite(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'data-indexer')  return Sprites.dataIndexer(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'es-silo')       return Sprites.esSilo(ctx, canvas, stop, state, z, t);
+    if (stop.kind === 'config-engine') return Sprites.configEngine(ctx, canvas, stop, state, z, t);
     return Sprites.station(ctx, canvas, stop, state, z);
   }
 
@@ -620,6 +760,14 @@ var Render = (function () {
         drawables.push({ key: pos.x + Sprites.ARCH_SPAN + pos.y, paint: function () {
           Sprites.archway(ctx, canvas, s, state.stopState(s.id), z, 'front');
         } });
+        // Gateway LST — sorted just behind the front pier so the arch frames it.
+        drawables.push({ key: pos.x + pos.y - 0.1, paint: function () {
+          var loff = LST_OFF[s.kind] || 0.60;
+          var lstE = (state.lstEnergy || {})[s.id] || 0;
+          Sprites.latticeTower(ctx, canvas, pos.x + loff, pos.y - loff,
+                               (BUILD_H[s.kind] || 36) * 1.5 * z, z,
+                               { energy: lstE, now: state.now });
+        } });
         return;
       }
       drawables.push({ key: pos.x + pos.y, paint: function () {
@@ -628,31 +776,219 @@ var Render = (function () {
         // track rather than a building marooned beside a line.
         if (aside.x || aside.y) Sprites.platformStrip(ctx, canvas, s, aside, z);
         drawStop(ctx, canvas, { id: s.id, name: s.name, kind: s.kind, tech: s.tech,
-                                role: s.role, grid: pos },
+                                role: s.role, axis: s.axis, kit: s.kit, grid: pos },
                  state.stopState(s.id), z, state.now);
+        /*
+         * Lattice Steel Tower, drawn within the same sorted slot as its building
+         * so it never slips behind. Positioned at (+0.60, -0.60) from the placed
+         * centre — 70 screen-px to the right at default zoom, outside every
+         * building's apron — with height set to 1.5× the building's world-pixel
+         * height so it is always visibly taller. Edge nodes (bare rail ends) are
+         * skipped; they have no structure to attach to.
+         */
+        if (s.kind !== 'edge') {
+          var loff = LST_OFF[s.kind] || 0.60;
+          var lstE = (state.lstEnergy || {})[s.id] || 0;
+          Sprites.latticeTower(ctx, canvas, pos.x + loff, pos.y - loff,
+                               (BUILD_H[s.kind] || 36) * 1.5 * z, z,
+                               { energy: lstE, now: state.now });
+        }
       } });
     });
-    (state.carts || []).forEach(function (c) {
-      drawables.push({ key: c.gx + c.gy + 0.01, paint: function () {
-        Sprites.cart(ctx, canvas, c.gx, c.gy, c.tint, z, c.load);
+    /*
+     * Per-station short rail segments drawn at each aside station's depth,
+     * so the rail appears on top of the platform strip rather than under it.
+     *
+     * The previous approach re-drew the FULL track keyed at the FAR station's
+     * depth (the Math.max across connected asides). Two bugs followed:
+     *   (a) a track keyed at the far station's depth was painted above the
+     *       flatbed anywhere between the two stations;
+     *   (b) tracks running INTO a yard (e.g. quota → alerting) were re-drawn
+     *       on top of the building, breaking the "cart disappears inside" look.
+     *
+     * Short segments fix both. Each segment spans ±SEG_HALF around its aside
+     * station only, keyed at that station's own depth. The flatbed at that
+     * halt point is at station.depth + 0.015 > segment depth + 0.01, so the
+     * flatbed always paints above the segment. And the segment never reaches
+     * the flatbed at a different station because the drawn line doesn't extend
+     * that far.
+     */
+    var SEG_HALF = 0.90;
+    flow.stops.forEach(function (s) {
+      var aside = asideOf(flow, s);
+      if (!aside.x && !aside.y) return;
+      var stationDepth = s.grid.x + s.grid.y + 0.01;
+      flow.tracks.forEach(function (t) {
+        if (t.layer && state.hideLayers) return;
+        if (t.transport === 'belt' || t.transport === 'carousel') return;
+        if (t.from !== s.id && t.to !== s.id) return;
+        if (t.from === t.to) return;            // retry loop — no strip to cover
+        var otherId = t.from === s.id ? t.to : t.from;
+        var other = stopById(flow, otherId);
+        if (!other) return;
+        // Tracks that enter a yard must disappear under the building rather
+        // than be re-drawn above it.
+        if (other.kind === 'railyard' || other.kind === 'terminal') return;
+        // Use the control-point direction rather than the straight-line vector
+        // to the other stop. A curved track (e.g. evaluator → quota) departs
+        // horizontally from evaluator even though quota's grid cell is diagonal;
+        // the straight-line vector would draw a diagonal segment across the strip.
+        var ctrl = Iso.trackControl(t, s.grid, other.grid);
+        var toX = ctrl ? ctrl.x : other.grid.x;
+        var toY = ctrl ? ctrl.y : other.grid.y;
+        var dx = toX - s.grid.x, dy = toY - s.grid.y;
+        var L = Math.sqrt(dx * dx + dy * dy) || 1;
+        var ux = dx / L, uy = dy / L;
+        // Only draw the segment if the track leaves along the station's main
+        // axis (perpendicular to the aside direction). Diagonal spurs would
+        // draw a stripe across the platform strip that was never covered by it.
+        var mainIsX = Math.abs(aside.y) > Math.abs(aside.x);
+        if (mainIsX ? Math.abs(uy) >= Math.abs(ux) : Math.abs(ux) >= Math.abs(uy)) return;
+        var ga = { x: s.grid.x - ux * SEG_HALF, y: s.grid.y - uy * SEG_HALF };
+        var gb = { x: s.grid.x + ux * SEG_HALF, y: s.grid.y + uy * SEG_HALF };
+        var active = state.activeTrack === t.from + '>' + t.to;
+        var dead = t.transport === 'retry' || t.transport === 'dlt';
+        var rail = isRail(t);
+        drawables.push({ key: stationDepth,
+          paint: (function (ga2, gb2, act, d, r) { return function () {
+            var pts = [Iso.toScreen(ga2.x, ga2.y, canvas),
+                       Iso.toScreen(gb2.x, gb2.y, canvas)];
+            if (r) drawRail(ctx, canvas, pts, act, d, false, z);
+            else drawRoad(ctx, canvas, pts, act, z);
+          }; })(ga, gb, active, dead, rail)
+        });
+      });
+    });
+    /*
+     * Packages walking a platform between a flatbed and a doorway. Sorted with
+     * everything else rather than painted over the top, so a package crossing
+     * in front of a building is in front of it and one that has reached the
+     * door is behind it — which is what makes it disappear INTO the building
+     * rather than fade out against its wall.
+     */
+    (state.parcels || []).forEach(function (p) {
+      drawables.push({ key: p.gx + p.gy + 0.012, paint: function () {
+        Sprites.packageBox(ctx, canvas, p.gx, p.gy, p.h, p.tint, z, p.alpha);
       } });
     });
-    (state.sceneTrains || []).forEach(function (t) {
-      drawables.push({ key: t.gx + t.gy + 0.015, paint: function () {
-        Sprites.train(ctx, canvas, t.gx, t.gy, t.heading, t.cargo, z, { puff: t.puff });
+    (state.flatbeds || []).forEach(function (f) {
+      // `key` is set by the engine only when the flatbed has driven inside a
+      // yard, where it must be painted BEFORE the shed instead of after it.
+      drawables.push({ key: f.key === null || f.key === undefined ? f.gx + f.gy + 0.015 : f.key,
+                       paint: function () {
+        var a = f.alpha !== undefined ? f.alpha : 1;
+        if (a < 1) { ctx.save(); ctx.globalAlpha = a; }
+        Sprites.flatbed(ctx, canvas, f.gx, f.gy, f.heading, z,
+                        { load: f.load, tint: f.tint });
+        if (a < 1) ctx.restore();
       } });
     });
-    if (state.cart) {
-      drawables.push({ key: state.cart.gx + state.cart.gy + 0.02, paint: function () {
-        Sprites.train(ctx, canvas, state.cart.gx, state.cart.gy,
-          state.cart.heading || { x: 1, y: 0 }, state.cart.cargo, z,
-          { puff: state.cart.puff || 0 });
-      } });
-    }
-
+    // The tunnel mouth sits on the approach track and occludes the flatbed while
+    // it is still "inside" (depth key +0.05 ensures it sorts in front of the
+    // flatbed at the same grid position, whose key is gx + gy + 0.015).
+    drawables.push({
+      key: Sprites.TUNNEL_GX + Sprites.TUNNEL_GY + 0.05,
+      paint: function () {
+        Sprites.tunnelMouth(ctx, canvas, Sprites.TUNNEL_GX, Sprites.TUNNEL_GY, z);
+      }
+    });
     drawables.sort(function (a, b) { return a.key - b.key; });
     drawables.forEach(function (d) { d.paint(); });
+
+    /*
+     * Overhead transmission wires — drawn after all buildings so they read as
+     * cables strung high in the air above the estate. Each wire runs from the
+     * LST apex of its station to the Centralized Audit LST apex. The base cable
+     * is always visible; the glow and bolt appear only when that stage is active.
+     */
+    var WIRE_STOPS = ['gateway', 'qualifier', 'filter', 'evaluator',
+                      'quota', 'alerting', 'echo-engine'];
+    var auditSt = stopById(flow, 'audit');
+    if (auditSt) {
+      var auLoff  = LST_OFF[auditSt.kind] || 0.60;
+      var auLstH  = (BUILD_H[auditSt.kind] || 36) * 1.5 * z;
+      var auFoot  = Iso.toScreen(auditSt.grid.x + auLoff, auditSt.grid.y - auLoff, canvas);
+      var auApex  = { x: auFoot.x, y: auFoot.y - auLstH };
+      WIRE_STOPS.forEach(function (wid) {
+        var ws = stopById(flow, wid);
+        if (!ws) return;
+        var wpos  = placed(flow, ws);
+        var wloff = LST_OFF[ws.kind] || 0.60;
+        var wlstH = (BUILD_H[ws.kind] || 36) * 1.5 * z;
+        var wfoot = Iso.toScreen(wpos.x + wloff, wpos.y - wloff, canvas);
+        var wapex = { x: wfoot.x, y: wfoot.y - wlstH };
+        var wireE = (state.wireEnergy || {})[wid] || 0;
+        var wZapT = state.zapT ? (state.zapT[wid] !== undefined ? state.zapT[wid] : -1) : -1;
+
+        // Support poles spaced every 3 grid units along the span. The pole top
+        // sits exactly on the full-span bezier, and those same (x, y) points
+        // are passed to transmissionWire as waypoints so each cable segment sags
+        // between its own pair of support points and visually touches both.
+        var pmx   = (wapex.x + auApex.x) / 2;
+        var pspan = Math.hypot(auApex.x - wapex.x, auApex.y - wapex.y);
+        var psag  = Math.max(6 * z, Math.min(36 * z, pspan * 0.05));
+        var pmy   = Math.max(wapex.y, auApex.y) + psag;
+        var gridDist = Math.hypot(auditSt.grid.x - wpos.x, auditSt.grid.y - wpos.y);
+        var nPoles = Math.max(0, Math.floor(gridDist / 3) - 1);
+        var polePts = [];
+        for (var pi = 1; pi <= nPoles; pi++) {
+          var pt = pi / (nPoles + 1);
+          var pu = 1 - pt;
+          var pbx = pu*pu*wapex.x + 2*pu*pt*pmx + pt*pt*auApex.x;
+          var pby = pu*pu*wapex.y + 2*pu*pt*pmy + pt*pt*auApex.y;
+          polePts.push({ x: pbx, y: pby });
+          Sprites.supportPole(ctx, pbx, pby, z, wireE, wZapT, state.now);
+        }
+
+        // Pass polePts so the wire is segmented pole-to-pole; each short span
+        // sags naturally rather than one long arc skipping over the supports.
+        Sprites.transmissionWire(ctx, wapex.x, wapex.y, auApex.x, auApex.y,
+                                 wireE, wZapT, z, state.now, polePts);
+      });
+    }
+
+    /*
+     * UI Portal wire network. Five overhead cables connect the Portal LST to
+     * the Gateway, Indexer, Config Curator, Review Service, and Reporting LSTs.
+     * The base cables are always visible. During the broadcast sequence, bolts
+     * travel outward from the Portal simultaneously on all five wires, hold for
+     * 1 s, then all five targets fire return bolts back. No support poles —
+     * the fan of wires is too dense for poles to read cleanly.
+     */
+    var PORTAL_WIRE_STOPS = ['gateway', 'indexer', 'config-curator', 'review-service', 'reporting'];
+    var uiPSt = stopById(flow, 'ui-portal');
+    if (uiPSt) {
+      var upPos  = placed(flow, uiPSt);
+      var upLoff = LST_OFF[uiPSt.kind] || 0.60;
+      var upLstH = (BUILD_H[uiPSt.kind] || 36) * 1.5 * z;
+      var upFoot = Iso.toScreen(upPos.x + upLoff, upPos.y - upLoff, canvas);
+      var upApex = { x: upFoot.x, y: upFoot.y - upLstH };
+
+      var pSt      = state.portalState || {};
+      var pOutE    = pSt.wireE    || 0;
+      var pOutZap  = (pSt.zapT    !== undefined) ? pSt.zapT    : -1;
+      var pRetE    = pSt.retWireE || 0;
+      var pRetZap  = (pSt.retZapT !== undefined) ? pSt.retZapT : -1;
+      // Merge outgoing and return into a single transmissionWire call per wire.
+      // Return bolt travels target→portal, which is 1→0 in the portal→target
+      // frame, so retZapT is flipped: 1 - retZapT.
+      var pActiveE   = Math.max(pOutE, pRetE);
+      var pActiveZap = pOutZap >= 0 ? pOutZap : pRetZap >= 0 ? 1 - pRetZap : -1;
+
+      PORTAL_WIRE_STOPS.forEach(function (pwid) {
+        var pwStop = stopById(flow, pwid);
+        if (!pwStop) return;
+        var pwPos  = placed(flow, pwStop);
+        var pwLoff = LST_OFF[pwStop.kind] || 0.60;
+        var pwLstH = (BUILD_H[pwStop.kind] || 36) * 1.5 * z;
+        var pwFoot = Iso.toScreen(pwPos.x + pwLoff, pwPos.y - pwLoff, canvas);
+        var pwApex = { x: pwFoot.x, y: pwFoot.y - pwLstH };
+        Sprites.transmissionWire(ctx, upApex.x, upApex.y, pwApex.x, pwApex.y,
+                                 pActiveE, pActiveZap, z, state.now, []);
+      });
+    }
   }
 
-  return { draw: draw, colours: C, placed: placed, asideOf: asideOf };
+  return { draw: draw, colours: C, placed: placed, asideOf: asideOf,
+           haltPoint: haltPoint };
 })();

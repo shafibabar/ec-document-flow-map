@@ -16,7 +16,7 @@
 <!-- The map is the interface. Everything else stays small and out of its way. -->
 <section id="panel">
   <div class="row">
-    <span id="scenarioName" class="eyebrow">Happy path</span>
+    <span id="scenarioName" class="eyebrow">Document Journey</span>
     <span id="count" class="count">1 / 7</span>
   </div>
 
@@ -27,21 +27,29 @@
     <span id="timer" class="timer">&mdash;</span>
   </div>
   <div id="attempt" class="attempt" hidden></div>
-  <div id="stamps" class="stamps"></div>
 
-  <p id="note"></p>
+  <p id="business"></p>
 
-  <div class="meta"><code id="via">&mdash;</code><span id="src" class="src"></span></div>
+  <ul id="eventsList" class="eventsList"></ul>
+
+  <div id="terminalEvent" class="infoBox infoBox--terminal" hidden></div>
+  <div id="failurePath" class="infoBox infoBox--failure" hidden></div>
+
+  <button id="seeMore" class="seeMore">See more &#9660;</button>
+
+  <div id="technicalSection" class="technicalSection">
+    <div id="stamps" class="stamps"></div>
+    <p id="note"></p>
+    <div class="meta"><code id="via">&mdash;</code><span id="src" class="src"></span></div>
+  </div>
+
   <div id="progressTrack"><div id="progress"></div></div>
 </section>
 
 <nav id="controls">
-  <select id="scenario" title="Scenario"></select>
-  <button id="restart" title="Restart">&#8635;</button>
-  <button id="back" title="Previous stop">&#9664;</button>
-  <button id="play" class="wide" title="Play / pause (space)">&#10074;&#10074;</button>
-  <button id="fwd" title="Next stop">&#9654;</button>
-  <button id="speed" title="Speed">1&times;</button>
+  <button id="backBtn" title="Previous stop">&#x23EE;</button>
+  <button id="pauseBtn" title="Pause / Resume">&#x23F8;</button>
+  <button id="fwdBtn" title="Next stop">&#x23ED;</button>
   <button id="plumbing" class="on" title="Config-sync and audit plumbing">&#8763;</button>
   <button id="followBtn" class="on" title="Follow the train">&#9673;</button>
   <button id="fit" title="Fit the whole estate">&#10530;</button>

@@ -1,3 +1,41 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working in this repository.
+
+---
+
+## Running the visualisation
+
+Open `index.html` in a browser — no build step, no server, no package manager. `file://` works fine.
+
+## Validating extracts
+
+```bash
+node tools/validate-extract.js data/extracted/<file>.js
+node --test "tools/test/*.test.js"   # 60 tests; use the glob, not the directory
+```
+
+## Code architecture
+
+The engine is four vanilla-JS files loaded via `<script>` tags in order: **iso → sprites → render → main**.
+
+| File | Responsibility |
+|---|---|
+| `js/iso.js` | Isometric math only: grid↔world↔screen, camera (pan/zoom/glide), quadratic curve helpers. No estate knowledge. |
+| `js/sprites.js` | Draws individual buildings: stations, yards (Elasticsearch), depots (S3/Mongo), sidings, gateway arch. Knows building *kinds*, not estate concepts. |
+| `js/render.js` | Full-frame painter. Maps estate concepts → building types; sorts all standing objects back-to-front (painter's algorithm on `gx + gy`). Layers: grass → ballast/roadbed → rails/roads → sorted objects (buildings, train, carts). |
+| `js/main.js` | Animation loop (`requestAnimationFrame`), scenario walk, logistics run (background scenery), camera follow, UI controls. |
+| `data/flow.js` | The sole source of truth: `stops` (services/stores with `grid` positions), `tracks` (hops with `transport` type), `scenarios` (step-by-step document walks). |
+| `data/layout.js` | Provenance record of grid positions extracted from the architecture image. Not changed by layout work. |
+
+**Transport types** drive visual encoding: `kafka`/`cdc`/`retry`/`dlt` → rail; `s3`/`mongo`/`elastic`/`road` → road (carts run between buildings while the train stands at the platform).
+
+**Adding a service** is a `data/flow.js` edit only — add a stop to `STOPS` with a `grid` position on one of the four clean axes (`same y`, `same x`, `dx===dy`, `dx===-dy`), add tracks to/from it, add steps to the relevant scenario. The engine picks it up automatically.
+
+**Depth sort key** is `gx + gy` (grid-space Manhattan distance from origin). Sprites that need to hide a cart inside them pass an explicit key just below their own to the renderer.
+
+---
+
 # Working in this repo
 
 Read this before doing anything. The rules here are not preferences — they are
