@@ -1119,7 +1119,7 @@ var Sprites = (function () {
     var RB = WORKS_ROOF;
 
     worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t,
-               { wall: '#c8c0b0', lo: '#b0a897' });  // warm taupe — Queue Qualifier
+               { wall: '#d4c4a0', lo: '#bcac88' });  // warm beige — Queue Qualifier
 
     var LANES = [-0.11, 0, 0.11];
     var items = [];
@@ -1202,7 +1202,7 @@ var Sprites = (function () {
     var items = [];
 
     worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t,
-               { wall: '#bcc8be', lo: '#a4b0a6' });  // sage green — Surveillance Filter
+               { wall: '#a0bc9c', lo: '#88a484' });  // sage green — Surveillance Filter
 
     // The intake header, running along the back of the deck.
     items.push({ d: gx + gy - 0.22, paint: function () {
@@ -1298,7 +1298,7 @@ var Sprites = (function () {
     var items = [];
 
     worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t,
-               { wall: '#c4bcca', lo: '#aba4b1' });  // dusty lavender — Policy Evaluator
+               { wall: '#c07860', lo: '#a86048' });  // terracotta — Policy Evaluator
 
     // The roof conveyor: a bed, a running surface, and roller ticks sliding
     // along it so the line reads as moving even between items.
@@ -1415,7 +1415,7 @@ var Sprites = (function () {
     var items = [];
 
     worksShell(ctx, canvas, A, state, accent, z, t,
-               { wall: '#ccbcb8', lo: '#b0a09c' });  // soft clay — Quota Manager
+               { wall: '#c8b060', lo: '#b09848' });  // mustard yellow — Quota Manager
 
     // --- the gauge bank, at the near end ------------------------------------
     items.push({ d: A.x(-0.33, 0) + A.y(-0.33, 0), paint: function () {
@@ -1657,14 +1657,15 @@ var Sprites = (function () {
   function railYard(ctx, canvas, stop, state, z, t) {
     var gx = stop.grid.x, gy = stop.grid.y;
     var accent = state === 'current' ? '#f0a132' : '#c2503f';
-    var wall = state === 'current' ? '#dde3e8' : WORKS.wall;
+    var wall = state === 'current' ? '#dde3e8' : '#8098b4';  // slate blue — Alerting
+    var lo   = state === 'current' ? '#bcc5cc' : '#607898';
     var B = 2, T = B + ALERT_H;
 
     I.box(ctx, canvas, gx, gy, ALERT_HW + 0.14, ALERT_HH + 0.12, B, '#b7bdc3');   // apron
 
     // Rear plant range, against the back wall and behind the shed in depth, so
     // it is painted first and the shed covers where they meet.
-    I.box(ctx, canvas, gx - 0.30, gy - ALERT_HH - 0.10, 0.34, 0.10, 20, WORKS.wallLo, B);
+    I.box(ctx, canvas, gx - 0.30, gy - ALERT_HH - 0.10, 0.34, 0.10, 20, lo, B);
 
     I.box(ctx, canvas, gx, gy, ALERT_HW, ALERT_HH, ALERT_H, wall, B);
     I.box(ctx, canvas, gx, gy, ALERT_HW + 0.03, ALERT_HH + 0.03, 3, WORKS.deck, T);
@@ -1741,12 +1742,12 @@ var Sprites = (function () {
     var accent = state === 'current' ? '#f0a132'
                : (stop.kit === 'acoustic' ? '#2f8f88'
                  : stop.kit === 'inspect' ? '#7a5aa3' : '#b85f8a');
-    var wallBase = stop.kit === 'acoustic' ? '#bcc8be'   // sage — Echo Engine
-                 : stop.kit === 'inspect'  ? '#c4bcca'   // lavender — Review Service
-                 :                           '#c8c0b0';  // warm taupe — Reporting
-    var loBase   = stop.kit === 'acoustic' ? '#a4b0a6'
-                 : stop.kit === 'inspect'  ? '#aba4b1'
-                 :                           '#b0a897';
+    var wallBase = stop.kit === 'acoustic' ? '#dccdb0'   // parchment — Echo Engine
+                 : stop.kit === 'inspect'  ? '#9abcb0'   // celadon — Review Service
+                 :                           '#b87858';  // copper — Reporting
+    var loBase   = stop.kit === 'acoustic' ? '#c4b598'
+                 : stop.kit === 'inspect'  ? '#82a498'
+                 :                           '#9c6040';
     var wall = state === 'current' ? '#dde3e8' : wallBase;
     var B = 2, T = B + TERM_H, RB = T + 3.8;
 
@@ -2242,7 +2243,7 @@ var Sprites = (function () {
     var gx = stop.grid.x, gy = stop.grid.y;
     var now    = t || 0;
     var accent = state === 'current' ? '#f0a132' : '#2f8f88';
-    var wall   = state === 'current' ? '#dde3e8' : '#ccbcb8';  // soft clay — Centralized Audit
+    var wall   = state === 'current' ? '#dde3e8' : '#8c5840';  // burnt umber — Centralized Audit
     var B = AUDIT_BASE, H = AUDIT_H, DECK = B + H;
     var RB = DECK + 3.8;   // roof membrane base, matching other yards
 
@@ -2251,7 +2252,7 @@ var Sprites = (function () {
     I.box(ctx, canvas, gx, gy, AUDIT_HW + 0.12, AUDIT_HH + 0.10, B, '#b7bdc3');
 
     // Low rear annex for depth — hides where the back wall meets the ground.
-    I.box(ctx, canvas, gx - 0.22, gy - AUDIT_HH - 0.08, 0.30, 0.08, 18, '#b0a09c', B);
+    I.box(ctx, canvas, gx - 0.22, gy - AUDIT_HH - 0.08, 0.30, 0.08, 18, '#744830', B);
 
     // Main body, deck cap, membrane (standard WORKS layering).
     I.box(ctx, canvas, gx, gy, AUDIT_HW, AUDIT_HH, H, wall, B);
@@ -2498,7 +2499,7 @@ var Sprites = (function () {
     var gx = stop.grid.x, gy = stop.grid.y;
     var now    = t || 0;
     var accent = state === 'current' ? '#f0a132' : '#c97a2f';
-    var wall   = state === 'current' ? '#dde3e8' : '#c8c0b0';  // warm taupe — Indexer
+    var wall   = state === 'current' ? '#dde3e8' : '#e0dbd0';  // alabaster — Indexer
     var B = 2, T = B + DI_H, RB = T + 3.8;
 
     // 90° rotation: swap half-extents so the long axis runs along y and the
@@ -2510,9 +2511,9 @@ var Sprites = (function () {
     // ── Shell ────────────────────────────────────────────────────────────────
     I.box(ctx, canvas, gx, gy, hw + 0.12, hh + 0.10, B, '#b7bdc3');
     if (rot90) {
-      I.box(ctx, canvas, gx - hw - 0.08, gy - 0.20, 0.08, 0.28, 18, '#b0a897', B);
+      I.box(ctx, canvas, gx - hw - 0.08, gy - 0.20, 0.08, 0.28, 18, '#c8c4bc', B);
     } else {
-      I.box(ctx, canvas, gx - 0.20, gy - hh - 0.08, 0.28, 0.08, 18, '#b0a897', B);
+      I.box(ctx, canvas, gx - 0.20, gy - hh - 0.08, 0.28, 0.08, 18, '#c8c4bc', B);
     }
     I.box(ctx, canvas, gx, gy, hw, hh, DI_H, wall, B);
     I.box(ctx, canvas, gx, gy, hw + 0.03, hh + 0.03, 3.0, WORKS.deck, T);
@@ -2723,10 +2724,11 @@ var Sprites = (function () {
     var gx = stop.grid.x, gy = stop.grid.y;
     var BASE = 4, H = 26, ROOF = BASE + H;
     var accent = state === 'current' ? '#f0a132' : '#7a6a3a';
+    var wall   = state === 'current' ? '#dde3e8' : '#c49098';  // dusty rose — Config Curator
 
     I.box(ctx, canvas, gx, gy, 0.44, 0.36, BASE, PALETTE.platform);    // apron
-    I.box(ctx, canvas, gx, gy, 0.36, 0.28, H,    PALETTE.wallWarm, BASE); // main body
-    I.box(ctx, canvas, gx, gy, 0.40, 0.32, 4,    '#8a8270', ROOF);     // flat parapet
+    I.box(ctx, canvas, gx, gy, 0.36, 0.28, H,    wall, BASE);          // main body
+    I.box(ctx, canvas, gx, gy, 0.40, 0.32, 4,    '#a07880', ROOF);     // flat parapet
 
     // A rotating gear disc on the roof's near half.
     var gearC = I.up(I.toScreen(gx - 0.08, gy - 0.04, canvas), ROOF + 8);
