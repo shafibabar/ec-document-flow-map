@@ -700,11 +700,11 @@ var Sprites = (function () {
     PILES.forEach(function (pile) {
       // Two by two on the ground with the rest stacked on top, which is what a
       // neat pile looks like — a single column of crates reads as a totem.
-      var spots = [[-0.055, -0.042], [0.055, -0.042], [-0.055, 0.042], [0.055, 0.042]];
+      var spots = [[-0.083, -0.063], [0.083, -0.063], [-0.083, 0.063], [0.083, 0.063]];
       for (var k = 0; k < pile[1]; k++) {
         var sp = spots[k % 4];
         packageBox(ctx, canvas, gx + ARCHIVE_PLATFORM + sp[0], gy + pile[0] + sp[1],
-                   4 + Math.floor(k / 4) * 6.7, null, z);
+                   4 + Math.floor(k / 4) * 9.9, null, z);
       }
     });
 
@@ -956,9 +956,9 @@ var Sprites = (function () {
    * blocks, the frame around them and the flat roof deck on top. The caller
    * adds only its own roof machinery, on WORKS_ROOF.
    */
-  function worksShell(ctx, canvas, A, state, accent, z, t) {
-    var wall = state === 'current' ? '#dde3e8' : WORKS.wall;
-    var lo = state === 'current' ? '#bcc5cc' : WORKS.wallLo;
+  function worksShell(ctx, canvas, A, state, accent, z, t, wp) {
+    var wall = state === 'current' ? '#dde3e8' : (wp && wp.wall || WORKS.wall);
+    var lo   = state === 'current' ? '#bcc5cc' : (wp && wp.lo   || WORKS.wallLo);
 
     /*
      * The dedicated railway platform. This is the buffer the brief asks for —
@@ -1118,7 +1118,8 @@ var Sprites = (function () {
     var beat = ((t || 0) % 2600) / 2600;
     var RB = WORKS_ROOF;
 
-    worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t);
+    worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t,
+               { wall: '#c8c0b0', lo: '#b0a897' });  // warm taupe — Queue Qualifier
 
     var LANES = [-0.11, 0, 0.11];
     var items = [];
@@ -1200,7 +1201,8 @@ var Sprites = (function () {
     var RB = WORKS_ROOF;
     var items = [];
 
-    worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t);
+    worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t,
+               { wall: '#bcc8be', lo: '#a4b0a6' });  // sage green — Surveillance Filter
 
     // The intake header, running along the back of the deck.
     items.push({ d: gx + gy - 0.22, paint: function () {
@@ -1295,7 +1297,8 @@ var Sprites = (function () {
     var cy = gy + 0.02, AX = gx + 0.05;               // conveyor line, arch position
     var items = [];
 
-    worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t);
+    worksShell(ctx, canvas, worksAxis(gx, gy, stop.axis), state, accent, z, t,
+               { wall: '#c4bcca', lo: '#aba4b1' });  // dusty lavender — Policy Evaluator
 
     // The roof conveyor: a bed, a running surface, and roller ticks sliding
     // along it so the line reads as moving even between items.
@@ -1411,7 +1414,8 @@ var Sprites = (function () {
     var RB = WORKS_ROOF;
     var items = [];
 
-    worksShell(ctx, canvas, A, state, accent, z, t);
+    worksShell(ctx, canvas, A, state, accent, z, t,
+               { wall: '#ccbcb8', lo: '#b0a09c' });  // soft clay — Quota Manager
 
     // --- the gauge bank, at the near end ------------------------------------
     items.push({ d: A.x(-0.33, 0) + A.y(-0.33, 0), paint: function () {
@@ -1737,13 +1741,19 @@ var Sprites = (function () {
     var accent = state === 'current' ? '#f0a132'
                : (stop.kit === 'acoustic' ? '#2f8f88'
                  : stop.kit === 'inspect' ? '#7a5aa3' : '#b85f8a');
-    var wall = state === 'current' ? '#dde3e8' : WORKS.wall;
+    var wallBase = stop.kit === 'acoustic' ? '#bcc8be'   // sage — Echo Engine
+                 : stop.kit === 'inspect'  ? '#c4bcca'   // lavender — Review Service
+                 :                           '#c8c0b0';  // warm taupe — Reporting
+    var loBase   = stop.kit === 'acoustic' ? '#a4b0a6'
+                 : stop.kit === 'inspect'  ? '#aba4b1'
+                 :                           '#b0a897';
+    var wall = state === 'current' ? '#dde3e8' : wallBase;
     var B = 2, T = B + TERM_H, RB = T + 3.8;
 
     I.box(ctx, canvas, gx, gy, TERM_HW + 0.12, TERM_HH + 0.10, B, '#b7bdc3');
     // A low annex against the back wall, so even the small yards are layered
     // rather than a single block with a lid.
-    I.box(ctx, canvas, gx - 0.18, gy - TERM_HH - 0.09, 0.26, 0.09, 15, WORKS.wallLo, B);
+    I.box(ctx, canvas, gx - 0.18, gy - TERM_HH - 0.09, 0.26, 0.09, 15, loBase, B);
 
     I.box(ctx, canvas, gx, gy, TERM_HW, TERM_HH, TERM_H, wall, B);
     I.box(ctx, canvas, gx, gy, TERM_HW + 0.03, TERM_HH + 0.03, 3, WORKS.deck, T);
@@ -2049,30 +2059,30 @@ var Sprites = (function () {
     var o = opts || {};
     var load = Math.max(0, Math.round(o.load === undefined ? 0 : o.load));
     var alongX = Math.abs(heading.x) >= Math.abs(heading.y);
-    var ha = 0.200, hc = 0.110;                       // half-extents along / across
+    var ha = 0.300, hc = 0.165;                       // half-extents along / across (1.5× original)
     var hw = alongX ? ha : hc, hh = alongX ? hc : ha;
     var c = I.toScreen(gx, gy, canvas);
 
-    shadowBlob(ctx, c.x, c.y, 17 * z, 7 * z);
+    shadowBlob(ctx, c.x, c.y, 25.5 * z, 10.5 * z);
 
-    I.box(ctx, canvas, gx, gy, hw * 0.86, hh * 0.86, 3, '#3d434a');     // chassis
-    I.box(ctx, canvas, gx, gy, hw, hh, 2.5, '#8a7a5e', 3);              // deck planking
-    I.box(ctx, canvas, gx, gy, hw + 0.012, hh + 0.012, 1.2, '#6b6250', 5.5);  // deck lip
+    I.box(ctx, canvas, gx, gy, hw * 0.86, hh * 0.86, 4.5, '#3d434a');       // chassis
+    I.box(ctx, canvas, gx, gy, hw, hh, 3.75, '#8a7a5e', 4.5);               // deck planking
+    I.box(ctx, canvas, gx, gy, hw + 0.018, hh + 0.018, 1.8, '#6b6250', 8.25); // deck lip
 
     // Headstocks at both ends, so the flatbed reads as rolling stock rather
     // than a plank on wheels.
     [-1, 1].forEach(function (sgn) {
-      var eu = sgn * (ha - 0.012);
+      var eu = sgn * (ha - 0.018);
       I.box(ctx, canvas, gx + (alongX ? eu : 0), gy + (alongX ? 0 : eu),
-            alongX ? 0.014 : hc, alongX ? hc : 0.014, 4, '#5a6068', 3);
+            alongX ? 0.021 : hc, alongX ? hc : 0.021, 6, '#5a6068', 4.5);
     });
 
     ctx.fillStyle = '#23282e';                                          // wheels
-    [[-0.115, 0.068], [0.115, -0.068], [-0.075, -0.068], [0.075, 0.068]].forEach(function (w) {
+    [[-0.173, 0.102], [0.173, -0.102], [-0.113, -0.102], [0.113, 0.102]].forEach(function (w) {
       var wx = alongX ? w[0] : w[1], wy = alongX ? w[1] : w[0];
       var p = I.toScreen(gx + wx, gy + wy, canvas);
       ctx.beginPath();
-      ctx.ellipse(p.x, p.y - 1.5 * z, 3.4 * z, 1.9 * z, 0, 0, Math.PI * 2);
+      ctx.ellipse(p.x, p.y - 2.25 * z, 5.1 * z, 2.85 * z, 0, 0, Math.PI * 2);
       ctx.fill();
     });
 
@@ -2082,14 +2092,14 @@ var Sprites = (function () {
      * shorter as boxes come off at each station. Drawn back to front within
      * the stack — a crate is a solid like anything else.
      */
-    var COLS = 3, deck = 6.7, STEP = 0.115;
+    var COLS = 3, deck = 10.05, STEP = 0.173;
     var stack = [];
     for (var n = 0; n < Math.min(6, load); n++) {
       var col = n % COLS, row = Math.floor(n / COLS);
       var du = (col - 1) * STEP;
       stack.push({
         x: gx + (alongX ? du : 0), y: gy + (alongX ? 0 : du),
-        base: deck + row * 6.9
+        base: deck + row * 10.35
       });
     }
     stack.sort(function (a, b) { return (a.x + a.y) - (b.x + b.y) || a.base - b.base; })
@@ -2107,10 +2117,10 @@ var Sprites = (function () {
   function packageBox(ctx, canvas, gx, gy, base, tint, z, alpha) {
     if (alpha !== undefined && alpha <= 0.01) return;
     if (alpha !== undefined) { ctx.save(); ctx.globalAlpha = Math.min(1, alpha); }
-    I.box(ctx, canvas, gx, gy, 0.052, 0.040, 6.6, tint || '#c2a06a', base);
-    var c = I.corners(gx, gy, 0.052, 0.040, canvas);
-    var top = { n: I.up(c.n, base + 6.6), e: I.up(c.e, base + 6.6),
-                s: I.up(c.s, base + 6.6), w: I.up(c.w, base + 6.6) };
+    I.box(ctx, canvas, gx, gy, 0.078, 0.060, 9.9, tint || '#c2a06a', base);
+    var c = I.corners(gx, gy, 0.078, 0.060, canvas);
+    var top = { n: I.up(c.n, base + 9.9), e: I.up(c.e, base + 9.9),
+                s: I.up(c.s, base + 9.9), w: I.up(c.w, base + 9.9) };
     I.poly(ctx, [topPoint(top, 0.26, 0.26), topPoint(top, 0.74, 0.26),
                  topPoint(top, 0.74, 0.74), topPoint(top, 0.26, 0.74)], '#efe3c8');
     if (alpha !== undefined) ctx.restore();
@@ -2232,7 +2242,7 @@ var Sprites = (function () {
     var gx = stop.grid.x, gy = stop.grid.y;
     var now    = t || 0;
     var accent = state === 'current' ? '#f0a132' : '#2f8f88';
-    var wall   = state === 'current' ? '#dde3e8' : WORKS.wall;
+    var wall   = state === 'current' ? '#dde3e8' : '#ccbcb8';  // soft clay — Centralized Audit
     var B = AUDIT_BASE, H = AUDIT_H, DECK = B + H;
     var RB = DECK + 3.8;   // roof membrane base, matching other yards
 
@@ -2241,7 +2251,7 @@ var Sprites = (function () {
     I.box(ctx, canvas, gx, gy, AUDIT_HW + 0.12, AUDIT_HH + 0.10, B, '#b7bdc3');
 
     // Low rear annex for depth — hides where the back wall meets the ground.
-    I.box(ctx, canvas, gx - 0.22, gy - AUDIT_HH - 0.08, 0.30, 0.08, 18, WORKS.wallLo, B);
+    I.box(ctx, canvas, gx - 0.22, gy - AUDIT_HH - 0.08, 0.30, 0.08, 18, '#b0a09c', B);
 
     // Main body, deck cap, membrane (standard WORKS layering).
     I.box(ctx, canvas, gx, gy, AUDIT_HW, AUDIT_HH, H, wall, B);
@@ -2488,7 +2498,7 @@ var Sprites = (function () {
     var gx = stop.grid.x, gy = stop.grid.y;
     var now    = t || 0;
     var accent = state === 'current' ? '#f0a132' : '#c97a2f';
-    var wall   = state === 'current' ? '#dde3e8' : WORKS.wall;
+    var wall   = state === 'current' ? '#dde3e8' : '#c8c0b0';  // warm taupe — Indexer
     var B = 2, T = B + DI_H, RB = T + 3.8;
 
     // 90° rotation: swap half-extents so the long axis runs along y and the
@@ -2500,9 +2510,9 @@ var Sprites = (function () {
     // ── Shell ────────────────────────────────────────────────────────────────
     I.box(ctx, canvas, gx, gy, hw + 0.12, hh + 0.10, B, '#b7bdc3');
     if (rot90) {
-      I.box(ctx, canvas, gx - hw - 0.08, gy - 0.20, 0.08, 0.28, 18, WORKS.wallLo, B);
+      I.box(ctx, canvas, gx - hw - 0.08, gy - 0.20, 0.08, 0.28, 18, '#b0a897', B);
     } else {
-      I.box(ctx, canvas, gx - 0.20, gy - hh - 0.08, 0.28, 0.08, 18, WORKS.wallLo, B);
+      I.box(ctx, canvas, gx - 0.20, gy - hh - 0.08, 0.28, 0.08, 18, '#b0a897', B);
     }
     I.box(ctx, canvas, gx, gy, hw, hh, DI_H, wall, B);
     I.box(ctx, canvas, gx, gy, hw + 0.03, hh + 0.03, 3.0, WORKS.deck, T);

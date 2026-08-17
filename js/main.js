@@ -950,6 +950,9 @@
     fit();
   };
 
+  document.getElementById('zoomIn').onclick  = function () { Iso.zoomBy(1.25); };
+  document.getElementById('zoomOut').onclick = function () { Iso.zoomBy(0.8);  };
+
   document.getElementById('backBtn').onclick  = goBack;
   document.getElementById('fwdBtn').onclick   = goForward;
   document.getElementById('pauseBtn').onclick = togglePause;

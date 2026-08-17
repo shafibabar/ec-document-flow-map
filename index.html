@@ -50,6 +50,8 @@
   <button id="backBtn" title="Previous stop">&#x23EE;</button>
   <button id="pauseBtn" title="Pause / Resume">&#x23F8;</button>
   <button id="fwdBtn" title="Next stop">&#x23ED;</button>
+  <button id="zoomIn" title="Zoom in">+</button>
+  <button id="zoomOut" title="Zoom out">&minus;</button>
   <button id="plumbing" class="on" title="Config-sync and audit plumbing">&#8763;</button>
   <button id="followBtn" class="on" title="Follow the train">&#9673;</button>
   <button id="fit" title="Fit the whole estate">&#10530;</button>
@@ -57,15 +59,11 @@
 </nav>
 
 <aside id="legend" hidden>
-  <div><i class="rail kafka"></i>Kafka topic &mdash; railway track</div>
-  <div><i class="rail cdc"></i>Debezium CDC &mdash; an outbox row, not a direct publish</div>
-  <div><i class="rail road"></i>S3 / Elasticsearch / Mongo &mdash; road, worked by cart</div>
-  <div><i class="rail belt"></i>Archive &rarr; EA-S3 conveyor &mdash; asserted by the repo owner, not in the documents</div>
-  <div><i class="rail retry"></i>Retry topic &mdash; a loop back to the same consumer</div>
-  <div><i class="rail dlt"></i>Dead letter topic &mdash; a dead-end siding</div>
-  <div><i class="rail terminus"></i>End of the surveillance line</div>
-  <div><i class="rail plumb"></i>Config sync and audit plumbing</div>
-  <div><i class="rail unverified"></i>Named by its consumer only &mdash; publisher undocumented</div>
+  <div><i class="rail kafka"></i>Kafka topic &mdash; direct event publish to a railway track</div>
+  <div><i class="rail cdc"></i>Debezium CDC &mdash; outbox row picked up by the change-data-capture pipeline</div>
+  <div><i class="rail belt"></i>Conveyor belt &mdash; Archive to EA-S3 feed</div>
+  <div><i class="rail carousel"></i>Cargo carousel &mdash; bidirectional loop between two buildings</div>
+  <div><i class="rail plumb"></i>Config sync and audit plumbing &mdash; service lines, not the document path</div>
 </aside>
 
 <script src="data/flow.js"></script>
