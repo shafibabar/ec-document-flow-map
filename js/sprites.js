@@ -2499,7 +2499,7 @@ var Sprites = (function () {
     var gx = stop.grid.x, gy = stop.grid.y;
     var now    = t || 0;
     var accent = state === 'current' ? '#f0a132' : '#c97a2f';
-    var wall   = state === 'current' ? '#dde3e8' : '#e0dbd0';  // alabaster — Indexer
+    var wall   = state === 'current' ? '#dde3e8' : '#a0bc9c';  // sage green — Indexer
     var B = 2, T = B + DI_H, RB = T + 3.8;
 
     // 90° rotation: swap half-extents so the long axis runs along y and the
@@ -2511,9 +2511,9 @@ var Sprites = (function () {
     // ── Shell ────────────────────────────────────────────────────────────────
     I.box(ctx, canvas, gx, gy, hw + 0.12, hh + 0.10, B, '#b7bdc3');
     if (rot90) {
-      I.box(ctx, canvas, gx - hw - 0.08, gy - 0.20, 0.08, 0.28, 18, '#c8c4bc', B);
+      I.box(ctx, canvas, gx - hw - 0.08, gy - 0.20, 0.08, 0.28, 18, '#88a484', B);
     } else {
-      I.box(ctx, canvas, gx - 0.20, gy - hh - 0.08, 0.28, 0.08, 18, '#c8c4bc', B);
+      I.box(ctx, canvas, gx - 0.20, gy - hh - 0.08, 0.28, 0.08, 18, '#88a484', B);
     }
     I.box(ctx, canvas, gx, gy, hw, hh, DI_H, wall, B);
     I.box(ctx, canvas, gx, gy, hw + 0.03, hh + 0.03, 3.0, WORKS.deck, T);
@@ -2687,7 +2687,9 @@ var Sprites = (function () {
       : (stop.id === 'surveil' ? '#39ff14' : '#4f46e5');
 
     I.box(ctx, canvas, gx, gy, 0.50, 0.42, BASE, PALETTE.platform);
-    I.box(ctx, canvas, gx, gy, 0.42, 0.34, BH,   PALETTE.wall, BASE);
+    var siloWall = state === 'current' ? '#dde3e8'
+                 : (stop.id === 'surveil' ? '#c07860' : '#c8b060');  // terracotta/mustard
+    I.box(ctx, canvas, gx, gy, 0.42, 0.34, BH,   siloWall, BASE);
     I.box(ctx, canvas, gx, gy, 0.46, 0.38, 3,    '#8a8070', RIM);
 
     // Three cylindrical silos with animated spinning rings at two heights each.
@@ -2724,11 +2726,11 @@ var Sprites = (function () {
     var gx = stop.grid.x, gy = stop.grid.y;
     var BASE = 4, H = 26, ROOF = BASE + H;
     var accent = state === 'current' ? '#f0a132' : '#7a6a3a';
-    var wall   = state === 'current' ? '#dde3e8' : '#c49098';  // dusty rose — Config Curator
+    var wall   = state === 'current' ? '#dde3e8' : '#b87858';  // copper — Config Curator
 
     I.box(ctx, canvas, gx, gy, 0.44, 0.36, BASE, PALETTE.platform);    // apron
     I.box(ctx, canvas, gx, gy, 0.36, 0.28, H,    wall, BASE);          // main body
-    I.box(ctx, canvas, gx, gy, 0.40, 0.32, 4,    '#a07880', ROOF);     // flat parapet
+    I.box(ctx, canvas, gx, gy, 0.40, 0.32, 4,    '#9c6040', ROOF);     // flat parapet
 
     // A rotating gear disc on the roof's near half.
     var gearC = I.up(I.toScreen(gx - 0.08, gy - 0.04, canvas), ROOF + 8);
