@@ -279,13 +279,13 @@
      */
 
     /*
-     * Config Curator (k8s). Moved to {x:10, y:0} — 4 tiles top-right (constant x,
-     * dy = −4) of the UI Portal at {x:10, y:4}. Configuration paths radiate to
-     * Gateway, Queue Qualifier, Surveillance Filter, Policy Evaluator, Quota
-     * Manager, and UI Portal. Sourced to knowledge/.
+     * Config Curator (k8s). Moved to {x:11, y:0} — one tile bottom-right (dx = +1,
+     * constant y) of its previous position at {x:10, y:0}. Keeps it off the same
+     * column as the Indexer and gives the control-plane area more breathing room.
+     * Sourced to knowledge/.
      */
     { id: 'config-curator', name: 'Config Curator',    kind: 'config-engine', tech: 'k8s',
-      grid: { x: 10, y: 0 } },
+      grid: { x: 11, y: 0 } },
 
     /*
      * Centralized Audit (MongoDB). One row below Config Curator, three cells
@@ -301,34 +301,33 @@
       grid: { x: 8, y: 9 } },
 
     /*
-     * Indexer (k8s). Swapped with UI Portal: now at {x:7, y:4}, rotated 90° so
-     * the entry doors face the +x (right) side of the isometric viewport. The two
-     * ES silos hang from its left (−x/−y) wall, fanning symmetrically:
+     * Indexer (k8s). Moved 4 tiles top-right (constant x, dy = −4) from {x:7,
+     * y:4} to {x:7, y:0}. The two ES silos maintain the same relative offsets —
+     * the belt vectors are unchanged:
      *
-     *   Surveilled Index: delta (−2, −3) — length √13. Screen vector (+1, −5).
-     *   Review Index:     delta (−3, −2) — length √13. Screen vector (−1, −5).
+     *   Surveilled Index: delta (0, −3) — same-x axis, straight up-right.
+     *   Review Index:     delta (−3, 0) — same-y axis, straight up-left.
      *
-     * Mirror-image screen projections at equal lengths give the visual impression
-     * of parallel diagonal conveyors. Sourced to knowledge/.
+     * Sourced to knowledge/.
      */
     { id: 'indexer',        name: 'Indexer',           kind: 'data-indexer',  tech: 'k8s',
-      orientation: '90', grid: { x: 7, y: 4 } },
+      orientation: '90', grid: { x: 7, y: 0 } },
 
     /*
      * Surveilled Index (ES). Belt exit: dx = 0, dy = −3 from Indexer — same-x
-     * axis, straight up-right on screen. Length = 3. Sits directly above the
-     * Indexer on the same x-column. Fast and densely packed.
+     * axis, straight up-right on screen. Length = 3. Moved with Indexer: was
+     * {x:7, y:1}, now {x:7, y:−3}. Fast and densely packed.
      */
     { id: 'surveil',        name: 'Surveilled Index',  kind: 'es-silo',       tech: 'ES',
-      grid: { x: 7, y: 1 } },
+      grid: { x: 7, y: -3 } },
 
     /*
      * Review Index (ES). Belt exit: dx = −3, dy = 0 from Indexer — same-y axis,
-     * straight up-left on screen. Length = 3. Sits on the same y-row as the
-     * Indexer, three tiles to the left. Slow and sparsely packed.
+     * straight up-left on screen. Length = 3. Moved with Indexer: was {x:4, y:4},
+     * now {x:4, y:0}. Slow and sparsely packed.
      */
     { id: 'review',         name: 'Review Index',      kind: 'es-silo',       tech: 'ES',
-      grid: { x: 4, y: 4 } },
+      grid: { x: 4, y: 0 } },
 
     /*
      * UI Portal (k8s). Swapped with Indexer: now at {x:10, y:4} on the same y = 4
