@@ -504,6 +504,7 @@
     if (!scene) scene = buildScene();
     var beds = [], parcels = [];
     var lstEnergy = {}, wireEnergy = {}, zapT = {};
+    var indexerWireEnergy = {}, indexerZapT = {};
     var c = now % scene.cycle;
 
     /*
@@ -527,12 +528,38 @@
       lstEnergy['audit'] = Math.max(lstEnergy['audit'] || 0, audE);
     }
 
+    /*
+     * Forward wire: after the source→Audit bolt arrives (k ≥ 0.50), a second
+     * bolt travels from the source's LST directly to the Indexer's LST.
+     * Only evaluator and alerting feed into the Indexer.
+     *
+     * kf maps the second half of the transmit to 0..1:
+     *   0.00-0.20  forward wire energises
+     *   0.20-0.50  bolt travels source → Indexer
+     *   0.50-0.70  Indexer LST glows up
+     *   0.70-1.00  fade
+     */
+    function applyIndexerForward(at, k) {
+      if (k < 0.50) return;
+      var kf = (k - 0.50) / 0.50;
+      var wireE = kf < 0.20 ? kf / 0.20 : kf < 0.70 ? 1 : (1 - kf) / 0.30;
+      var zap   = kf < 0.20 ? -1 : kf < 0.50 ? (kf - 0.20) / 0.30 : -1;
+      var idxE  = kf < 0.50 ? 0 : kf < 0.65 ? (kf - 0.50) / 0.15 : kf < 0.70 ? 1 : (1 - kf) / 0.30;
+      indexerWireEnergy[at] = Math.max(indexerWireEnergy[at] || 0, wireE);
+      indexerZapT[at]       = zap;
+      lstEnergy['indexer']  = Math.max(lstEnergy['indexer']  || 0, idxE);
+    }
+
     // Scan for any active transmit phase (at most one at a time).
     var pi;
     for (pi = 0; pi < scene.phases.length; pi++) {
       var tph = scene.phases[pi];
       if (tph.kind === 'transmit' && c >= tph.t0 && c < tph.t1) {
-        applyTransmit(tph.at, (c - tph.t0) / (tph.t1 - tph.t0));
+        var tk = (c - tph.t0) / (tph.t1 - tph.t0);
+        applyTransmit(tph.at, tk);
+        if (tph.at === 'evaluator' || tph.at === 'alerting') {
+          applyIndexerForward(tph.at, tk);
+        }
         break;
       }
     }
@@ -726,6 +753,7 @@
 
     return { flatbeds: beds, parcels: parcels,
              lstEnergy: lstEnergy, wireEnergy: wireEnergy, zapT: zapT,
+             indexerWireEnergy: indexerWireEnergy, indexerZapT: indexerZapT,
              portalState: ps,
              currentStop: currentStop, visitedStops: visitedStops, haltRemaining: haltRemaining };
   }
@@ -882,6 +910,7 @@
       logistics = {
         flatbeds: [], parcels: [],
         lstEnergy: {}, wireEnergy: {}, zapT: {},
+        indexerWireEnergy: {}, indexerZapT: {},
         portalState: null, currentStop: null,
         visitedStops: [], haltRemaining: 0
       };
@@ -911,6 +940,8 @@
       lstEnergy: logistics.lstEnergy,
       wireEnergy: logistics.wireEnergy,
       zapT: logistics.zapT,
+      indexerWireEnergy: logistics.indexerWireEnergy,
+      indexerZapT: logistics.indexerZapT,
       portalState: logistics.portalState,
       stopState: stopStateFor,
       hideLayers: st.hideLayers

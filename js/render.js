@@ -948,6 +948,53 @@ var Render = (function () {
     }
 
     /*
+     * Inbound forward wires — evaluator→indexer and alerting→indexer. Each
+     * fires during the second half of its transmit phase, after the bolt has
+     * arrived at Audit. Support poles follow the same 3-grid-unit rule.
+     */
+    var INDEXER_WIRE_SOURCES = ['evaluator', 'alerting'];
+    var indexerSt = stopById(flow, 'indexer');
+    if (indexerSt) {
+      var ixPos  = placed(flow, indexerSt);
+      var ixLoff = LST_OFF[indexerSt.kind] || 0.60;
+      var ixLstH = (BUILD_H[indexerSt.kind] || 36) * 1.5 * z;
+      var ixFoot = Iso.toScreen(ixPos.x + ixLoff, ixPos.y - ixLoff, canvas);
+      var ixApex = { x: ixFoot.x, y: ixFoot.y - ixLstH };
+
+      INDEXER_WIRE_SOURCES.forEach(function (sid) {
+        var src = stopById(flow, sid);
+        if (!src) return;
+        var sPos  = placed(flow, src);
+        var sLoff = LST_OFF[src.kind] || 0.60;
+        var sLstH = (BUILD_H[src.kind] || 36) * 1.5 * z;
+        var sFoot = Iso.toScreen(sPos.x + sLoff, sPos.y - sLoff, canvas);
+        var sApex = { x: sFoot.x, y: sFoot.y - sLstH };
+
+        var wireE = (state.indexerWireEnergy || {})[sid] || 0;
+        var wZapT = state.indexerZapT ? (state.indexerZapT[sid] !== undefined ? state.indexerZapT[sid] : -1) : -1;
+
+        var pmx      = (sApex.x + ixApex.x) / 2;
+        var pspan    = Math.hypot(ixApex.x - sApex.x, ixApex.y - sApex.y);
+        var psag     = Math.max(6 * z, Math.min(36 * z, pspan * 0.05));
+        var pmy      = Math.max(sApex.y, ixApex.y) + psag;
+        var gridDist = Math.hypot(indexerSt.grid.x - sPos.x, indexerSt.grid.y - sPos.y);
+        var nPoles   = Math.max(0, Math.floor(gridDist / 3) - 1);
+        var polePts  = [];
+        for (var pi = 1; pi <= nPoles; pi++) {
+          var pt = pi / (nPoles + 1);
+          var pu = 1 - pt;
+          var pbx = pu*pu*sApex.x + 2*pu*pt*pmx + pt*pt*ixApex.x;
+          var pby = pu*pu*sApex.y + 2*pu*pt*pmy + pt*pt*ixApex.y;
+          polePts.push({ x: pbx, y: pby });
+          Sprites.supportPole(ctx, pbx, pby, z, wireE, wZapT, state.now);
+        }
+
+        Sprites.transmissionWire(ctx, sApex.x, sApex.y, ixApex.x, ixApex.y,
+                                 wireE, wZapT, z, state.now, polePts);
+      });
+    }
+
+    /*
      * UI Portal wire network. Five overhead cables connect the Portal LST to
      * the Gateway, Indexer, Config Curator, Review Service, and Reporting LSTs.
      * The base cables are always visible. During the broadcast sequence, bolts
