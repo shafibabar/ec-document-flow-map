@@ -1,0 +1,26 @@
+'use strict';
+/* Test fixture — external: id shadowing an in-scope service */
+(function (root, factory) {
+  var d = factory();
+  if (typeof module === 'object' && module.exports) module.exports = d;
+  else (root.EC_EXTRACTS = root.EC_EXTRACTS || {})[d.service.id] = d;
+})(typeof self !== 'undefined' ? self : this, function () {
+  return {
+    service: {
+      id: "fixture", name: "fixture-service", folder: "Fixture",
+      group: "none", generation: "3.0",
+      summary: "A minimal conforming extract.",
+      source: { file: "Echo Engine/EVENT_FLOW_MAP.md", heading: "Events Consumed" }
+    },
+    nodes: [ { id: "external:config-curator", name: "Config Curator", kind: "external",
+        group: "none", generation: "unknown",
+        source: { file: "Echo Engine/EVENT_FLOW_MAP.md", heading: "High-Level Architecture" } } ],
+    edges: [
+      { from: "a", to: "fixture", transport: "kafka", name: "t.one",
+        eventType: "Ev", direction: "in", source: { file: "Echo Engine/EVENT_FLOW_MAP.md", heading: "Events Consumed" } }
+    ],
+    retries: [], stores: [], decisions: [], terminalStates: [],
+    failurePaths: [], restInbound: [], restOutbound: [], tenancy: [], ambiguities: [],
+    transformation: { before: "x", action: "y", after: "z", source: { file: "Echo Engine/EVENT_FLOW_MAP.md", heading: "Events Consumed" } }
+  };
+});
